@@ -70,6 +70,57 @@ async function withProjectSettings(t, contents) {
 	return cwd;
 }
 
+async function readBehaviorTestNames() {
+	const source = await readFile(new URL(import.meta.url), "utf8");
+	return [...source.matchAll(/^test\(\s*"((?:[^"\\]|\\.)*)"/gm)].map((match) =>
+		JSON.parse(`"${match[1]}"`),
+	);
+}
+
+async function readVerifiedFeatureSpec(featureFileName) {
+	const featurePath = join(repoRoot, "features", featureFileName);
+	const feature = await readFile(featurePath, "utf8");
+
+	assert.equal(
+		feature.split("\n").filter((line) => line.trim().startsWith("Feature:"))
+			.length,
+		1,
+		`${featureFileName} must declare exactly one Feature`,
+	);
+
+	const scenarios = feature
+		.split(/^\s*Scenario:/m)
+		.slice(1)
+		.map((block) => {
+			const [nameLine, ...stepLines] = block.split("\n");
+			return {
+				name: nameLine.trim(),
+				steps: stepLines.map((line) => line.trim()).filter(Boolean),
+			};
+		});
+
+	assert.ok(
+		scenarios.length >= 1,
+		`${featureFileName} must contain at least one Scenario`,
+	);
+
+	const behaviorTestNames = await readBehaviorTestNames();
+	for (const scenario of scenarios) {
+		for (const keyword of ["Given ", "When ", "Then "]) {
+			assert.ok(
+				scenario.steps.some((step) => step.startsWith(keyword)),
+				`Scenario "${scenario.name}" in ${featureFileName} must have a ${keyword.trim()} step`,
+			);
+		}
+		assert.ok(
+			behaviorTestNames.includes(scenario.name),
+			`Scenario "${scenario.name}" in ${featureFileName} must match a behavior test name in test/forge.test.mjs`,
+		);
+	}
+
+	return scenarios.map((scenario) => scenario.name);
+}
+
 async function invokeForge(t, { cwd, trusted = true } = {}) {
 	await withFakeTicketCommands(t, {
 		gh: { stdout: "{}" },
@@ -443,6 +494,16 @@ test("forge settings validation normalizes legacy testCommand string", () => {
 
 	assert.deepEqual(settings.testCommands, [
 		"pnpm --filter ./packages/app test",
+	]);
+});
+
+test("readers see the kept-user-context behavior as a verified feature spec", async () => {
+	const scenarioNames = await readVerifiedFeatureSpec(
+		"forge-keeps-user-context.feature",
+	);
+
+	assert.deepEqual(scenarioNames, [
+		"/forge keeps the user's context after the ticket selector",
 	]);
 });
 

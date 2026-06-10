@@ -523,6 +523,109 @@ test("forge settings validation normalizes legacy testCommand string", () => {
 	]);
 });
 
+async function readTddMicrocycleGuide() {
+	return readFile(
+		join(repoRoot, "docs", "tdd-microcycle-programmatic-guide.md"),
+		"utf8",
+	);
+}
+
+function guideSection(guide, heading) {
+	const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const match = guide.match(
+		new RegExp(
+			`(?:^|\\n)## ${escapedHeading}\\n(?<section>[\\s\\S]*?)(?=\\n## |$)`,
+		),
+	);
+	assert.ok(match?.groups?.section, `expected guide section: ${heading}`);
+	return match.groups.section;
+}
+
+test("Select the next smallest behavior slice", async () => {
+	const guide = await readTddMicrocycleGuide();
+	const programmaticLoop = guideSection(guide, "Programmatic loop");
+	const selection = guideSection(guide, "1. Select the next smallest behavior");
+
+	assert.match(programmaticLoop, /select_next_smallest_behavior\(\)/);
+	assert.match(selection, /Choose one observable behavior/);
+	assert.match(selection, /Parse the ticket, feature, or `\.feature` file/);
+	assert.match(
+		selection,
+		/Filter out behavior already covered by passing tests/,
+	);
+	assert.match(selection, /fewest dependencies and clearest expected outcome/);
+	assert.match(selection, /selected behavior can be named in one sentence/);
+});
+
+test("Red is verified as an intended failure", async () => {
+	const guide = await readTddMicrocycleGuide();
+	const red = guideSection(
+		guide,
+		"3. Verify red fails for the intended reason",
+	);
+
+	assert.match(red, /Run the narrowest command that exercises the new test/);
+	assert.match(red, /The command must fail/);
+	assert.match(red, /failing test must be the newly added or changed test/);
+	assert.match(red, /failure message must point to the missing behavior/);
+	assert.match(
+		red,
+		/RED_OK = failing_test_name \+ failure_message_excerpt \+ command/,
+	);
+	assert.match(red, /If red fails for the wrong reason, fix the test/);
+});
+
+test("Green change is the smallest passing implementation", async () => {
+	const guide = await readTddMicrocycleGuide();
+	const green = guideSection(guide, "4. Make the smallest green change");
+	const verifyGreen = guideSection(guide, "5. Verify the slice is green");
+
+	assert.match(
+		green,
+		/Edit production code only enough to satisfy the red test/,
+	);
+	assert.match(green, /Do not improve unrelated design yet/);
+	assert.match(green, /Do not expand scope to additional behaviors/);
+	assert.match(green, /focused test passes/);
+	assert.match(verifyGreen, /All required checks pass/);
+	assert.match(
+		verifyGreen,
+		/red failure evidence still explains why the test was meaningful/,
+	);
+});
+
+test("Refactor keeps observable behavior unchanged", async () => {
+	const guide = await readTddMicrocycleGuide();
+	const refactor = guideSection(guide, "6. Refactor without changing behavior");
+
+	assert.match(refactor, /Keep the same externally observable behavior/);
+	assert.match(refactor, /Do not add new behavior while refactoring/);
+	assert.match(refactor, /Validation after every meaningful refactor batch/);
+	assert.match(refactor, /<focused test command>/);
+	assert.match(refactor, /<required wider checks>/);
+	assert.match(refactor, /focused test remains green/);
+	assert.match(refactor, /wider check set remains green/);
+});
+
+test("The final commit is anchored to the recorded start hash", async () => {
+	const guide = await readTddMicrocycleGuide();
+	const programmaticLoop = guideSection(guide, "Programmatic loop");
+	const commit = guideSection(guide, "7. Commit the final green state");
+
+	assert.match(programmaticLoop, /START_SHA=\$\(git rev-parse HEAD\)/);
+	assert.match(
+		programmaticLoop,
+		/test "\$\(git rev-parse HEAD\^1\)" = "\$START_SHA"/,
+	);
+	assert.match(
+		commit,
+		/test "\$\(git merge-base HEAD "\$START_SHA"\)" = "\$START_SHA"/,
+	);
+	assert.match(commit, /squash it with the green and refactor work/);
+	assert.match(commit, /HEAD\^1` equals the recorded `START_SHA`/);
+	assert.match(commit, /no leftover temporary red commits/);
+});
+
 test("readers see the kept-user-context behavior as a verified feature spec", async () => {
 	const scenarioNames = await readVerifiedFeatureSpec(
 		"forge-keeps-user-context.feature",
@@ -568,19 +671,18 @@ test("readers see the settings warnings and fallbacks behavior as a verified fea
 	]);
 });
 
-test("readers see the TDD micro-cycle workflow as a concise companion feature spec", async () => {
-	const guidePath = join(
-		repoRoot,
-		"docs",
-		"tdd-microcycle-programmatic-guide.md",
+test("readers see the TDD micro-cycle workflow as a verified feature spec", async () => {
+	const scenarioNames = await readVerifiedFeatureSpec(
+		"tdd-microcycle-workflow.feature",
 	);
-	const guide = await readFile(guidePath, "utf8");
-	assert.match(guide, /## Related behavior spec/);
 
-	const scenarioNames = (
-		await readFeatureSpecScenarios("tdd-microcycle-workflow.feature")
-	).map((scenario) => scenario.name);
-	assert.ok(scenarioNames.length >= 1);
+	assert.deepEqual(scenarioNames, [
+		"Select the next smallest behavior slice",
+		"Red is verified as an intended failure",
+		"Green change is the smallest passing implementation",
+		"Refactor keeps observable behavior unchanged",
+		"The final commit is anchored to the recorded start hash",
+	]);
 });
 
 test("/forge blocks dash-prefixed input before ticket lookup commands receive it", async (t) => {

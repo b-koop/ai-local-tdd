@@ -2,3 +2,12 @@ node_modules/
 .pnpm/
 *.tgz
 .DS_Store
+
+# Local AI agent/workflow state
+.rpiv/
+.agents/
+.agency/
+.forge/
+.claude/
+.cursor/
+.codex/

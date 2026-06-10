@@ -268,15 +268,8 @@ test("/forge reports a timeout when an external ticket command hangs", async () 
 });
 
 test("/forge includes project forge settings when project is trusted", async (t) => {
-	await withFakeTicketCommands(t, {
-		gh: { stdout: "{}" },
-		linear: { stdout: "Linear issue" },
-	});
-	const piDir = join(repoRoot, ".pi");
-	const settingsPath = join(piDir, "settings.json");
-	await mkdir(piDir, { recursive: true });
-	await writeFile(
-		settingsPath,
+	const cwd = await withProjectSettings(
+		t,
 		JSON.stringify({
 			forge: {
 				retries: 2,
@@ -289,33 +282,8 @@ test("/forge includes project forge settings when project is trusted", async (t)
 			},
 		}),
 	);
-	t.after(async () => {
-		await rm(piDir, { recursive: true, force: true });
-	});
 
-	let forgeHandler;
-	const sentMessages = [];
-	const pi = {
-		on() {},
-		registerCommand(name, command) {
-			if (name === "forge") forgeHandler = command.handler;
-		},
-		sendUserMessage(message) {
-			sentMessages.push(message);
-		},
-	};
-
-	registerForgeExtension(pi);
-
-	await forgeHandler("ABC-123", {
-		cwd: repoRoot,
-		isIdle: () => true,
-		isProjectTrusted: () => true,
-		ui: {
-			notify() {},
-			setStatus() {},
-		},
-	});
+	const { sentMessages } = await invokeForge(t, { cwd });
 
 	assert.equal(sentMessages.length, 1);
 	assert.match(sentMessages[0], /retries: 2/);

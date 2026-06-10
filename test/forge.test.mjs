@@ -614,6 +614,22 @@ test("Red is verified as an intended failure", async () => {
 	assert.match(red, /If red fails for the wrong reason, fix the test/);
 });
 
+test("Deterministic gate failures block AI continuation until recovery is documented", async () => {
+	const guide = await readTddMicrocycleGuide();
+	const deterministicGates = guideSection(guide, "Deterministic gate contract");
+
+	assert.match(deterministicGates, /git status --short/);
+	assert.match(deterministicGates, /git diff --name-only/);
+	assert.match(deterministicGates, /<focused test command>/);
+	assert.match(deterministicGates, /<required wider checks>/);
+	assert.match(deterministicGates, /git rev-parse HEAD\^1/);
+	assert.match(deterministicGates, /Inputs/);
+	assert.match(deterministicGates, /Expected outputs/);
+	assert.match(deterministicGates, /exit code/);
+	assert.match(deterministicGates, /block AI continuation/);
+	assert.match(deterministicGates, /Recovery/);
+});
+
 test("Green change is the smallest passing implementation", async () => {
 	const guide = await readTddMicrocycleGuide();
 	const green = guideSection(guide, "4. Make the smallest green change");

@@ -82,6 +82,19 @@ Prefer deterministic code for anything that can be checked from git, files, test
 
 Automation should block progress when code-owned checks fail. AI judgment may add context, but it must not override a failed deterministic check.
 
+## Deterministic gate contract
+
+These gates are command-level contracts for automation. Each gate names the command inputs, the expected outputs, and the recovery path to record when a deterministic check fails. Failed deterministic checks block AI continuation until the operator or agent records the recovery path and reruns the failed gate successfully.
+
+| Gate | Inputs | Expected outputs | Recovery |
+| --- | --- | --- | --- |
+| Git state | `git status --short` before each phase. | Exit code `0`; output is empty or every listed path is intentionally assigned to the current slice. | Stop, classify each path, stash or revert unrelated changes, or document why the dirty state belongs to the slice; rerun before continuing. |
+| File boundaries | `git diff --name-only` after red, green, and refactor work. | Exit code `0`; red lists only tests/specs/fixtures, green lists only production/public contract files needed for the behavior, and refactor lists only files already in the slice. | Stop, move misplaced edits to the correct phase, or revert out-of-scope files; rerun before continuing. |
+| Test commands | `<focused test command>` plus `<required wider checks>` when the phase requires them. | Red: focused command exits non-zero for the intended test. Green/refactor/final: required commands exit code `0`. Captured output names the command and result. | Stop on syntax, setup, unrelated, or flaky failures; fix the right phase or split the behavior smaller, then rerun the exact failed command. |
+| Commit ancestry | `git rev-parse HEAD^1` after the final commit, compared with `START_SHA`. | Exit code `0`; the resolved parent equals the recorded start hash. | Stop, inspect history, squash any temporary red checkpoint into the final green slice, or reset/replay the slice so the final commit parent is `START_SHA`; rerun the ancestry check. |
+
+AI may summarize or recommend a recovery, but it must not proceed to the next phase while any gate above is failing.
+
 ## 1. Select the next smallest behavior
 
 Choose one observable behavior that can be proven by one focused test.

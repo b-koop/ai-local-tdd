@@ -46,6 +46,8 @@ Forge reads an optional `forge` section from Pi settings. Global settings live i
 
 `testCommands` is the ordered list of executable validation commands Forge passes to the agent prompt. Forge does not execute them directly; the agent should run or select from these commands as applicable for the current slice. The legacy `testCommand` string is still accepted and normalized to `testCommands: [testCommand]`, but new settings should use `testCommands`.
 
+Forge loads settings tolerantly. Missing files, missing `forge`, and omitted optional fields are quiet; malformed, skipped, deprecated, unknown, or invalid Forge settings produce one warning notification and a `# Forge settings warnings` prompt section that explains the source, key, outcome, and fix without echoing raw invalid values.
+
 ```json
 {
   "forge": {

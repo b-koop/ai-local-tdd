@@ -52,8 +52,25 @@ export declare const rawForgeSettingsSchema: z.ZodObject<{
 }, z.core.$loose>;
 export type ForgeSettings = z.infer<typeof forgeSettingsSchema>;
 export type RawForgeSettings = z.infer<typeof rawForgeSettingsSchema>;
+export type ForgeSettingsWarning = {
+    source: string;
+    path: string;
+    key: string;
+    problem: string;
+    outcome: string;
+    fix: string;
+};
+export type RawForgeSettingsParseResult = {
+    settings: RawForgeSettings | undefined;
+    warnings: ForgeSettingsWarning[];
+};
 export declare const DEFAULT_FORGE_SETTINGS: ForgeSettings;
+export declare function parseRawForgeSettingsWithWarnings(value: unknown, source?: string): RawForgeSettingsParseResult;
 export declare function parseRawForgeSettings(value: unknown): RawForgeSettings | undefined;
+export declare function mergeForgeSettingsWithWarnings(base: ForgeSettings, override: unknown, source?: string): {
+    settings: ForgeSettings;
+    warnings: ForgeSettingsWarning[];
+};
 export declare function mergeForgeSettings(base: ForgeSettings, override: unknown): ForgeSettings;
 export declare function generateForgeSettingsSample(): ForgeSettings;
 export declare function generateForgeSettingsFileSample(): z.infer<typeof forgeSettingsFileSchema>;

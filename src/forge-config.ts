@@ -92,36 +92,369 @@ export const rawForgeSettingsSchema = z.looseObject({
 export type ForgeSettings = z.infer<typeof forgeSettingsSchema>;
 export type RawForgeSettings = z.infer<typeof rawForgeSettingsSchema>;
 
+export type ForgeSettingsWarning = {
+	source: string;
+	path: string;
+	key: string;
+	problem: string;
+	outcome: string;
+	fix: string;
+};
+
+export type RawForgeSettingsParseResult = {
+	settings: RawForgeSettings | undefined;
+	warnings: ForgeSettingsWarning[];
+};
+
+const FORGE_SETTING_KEYS = new Set([
+	"retries",
+	"timeoutMs",
+	"timeout",
+	"testCommands",
+	"testCommand",
+	"skills",
+]);
+
+const FORGE_AI_STEP_SET = new Set<string>(FORGE_AI_STEPS);
+
 export const DEFAULT_FORGE_SETTINGS: ForgeSettings = forgeSettingsSchema.parse(
 	{},
 );
 
+function warning(
+	source: string,
+	path: string,
+	key: string,
+	problem: string,
+	outcome: string,
+	fix: string,
+): ForgeSettingsWarning {
+	return { source, path, key, problem, outcome, fix };
+}
+
+function describeExpected(value: unknown): string {
+	if (Array.isArray(value)) return "array";
+	if (value === null) return "null";
+	return typeof value;
+}
+
+function validNonEmptyStringArray(value: unknown): value is string[] {
+	return (
+		Array.isArray(value) &&
+		value.length > 0 &&
+		value.every((item) => typeof item === "string" && item.trim().length > 0)
+	);
+}
+
+function warnUnknownForgeKeys(
+	value: Record<string, unknown>,
+	source: string,
+	warnings: ForgeSettingsWarning[],
+): void {
+	for (const key of Object.keys(value)) {
+		if (!FORGE_SETTING_KEYS.has(key)) {
+			warnings.push(
+				warning(
+					source,
+					`forge.${key}`,
+					key,
+					"Unknown Forge setting key.",
+					"The setting was ignored.",
+					"Remove the key or rename it to a supported Forge setting.",
+				),
+			);
+		}
+	}
+}
+
+function parseRetries(
+	value: Record<string, unknown>,
+	source: string,
+	parsed: Record<string, unknown>,
+	warnings: ForgeSettingsWarning[],
+): void {
+	if (!("retries" in value)) return;
+	const result = z.number().int().min(0).safeParse(value.retries);
+	if (result.success) {
+		parsed.retries = result.data;
+		return;
+	}
+	warnings.push(
+		warning(
+			source,
+			"forge.retries",
+			"retries",
+			`Expected a non-negative integer, got ${describeExpected(value.retries)}.`,
+			"Using the previous/default retry count.",
+			"Set retries to 0 or a positive whole number.",
+		),
+	);
+}
+
+function parseTimeoutMs(
+	value: Record<string, unknown>,
+	source: string,
+	parsed: Record<string, unknown>,
+	warnings: ForgeSettingsWarning[],
+): void {
+	if (!("timeoutMs" in value)) return;
+	const result = z.number().int().positive().safeParse(value.timeoutMs);
+	if (result.success) {
+		parsed.timeoutMs = result.data;
+		return;
+	}
+	warnings.push(
+		warning(
+			source,
+			"forge.timeoutMs",
+			"timeoutMs",
+			`Expected a positive integer number of milliseconds, got ${describeExpected(value.timeoutMs)}.`,
+			"Using the previous/default timeout.",
+			"Set timeoutMs to a positive whole number such as 30000.",
+		),
+	);
+}
+
+function parseLegacyTimeout(
+	value: Record<string, unknown>,
+	source: string,
+	parsed: Record<string, unknown>,
+	warnings: ForgeSettingsWarning[],
+): void {
+	if (!("timeout" in value)) return;
+	const result = z.number().int().positive().safeParse(value.timeout);
+	if (result.success) {
+		parsed.timeout = result.data;
+		warnings.push(
+			warning(
+				source,
+				"forge.timeout",
+				"timeout",
+				"Legacy Forge timeout key is deprecated.",
+				`Accepted for compatibility as timeoutMs=${result.data}.`,
+				"Rename timeout to timeoutMs.",
+			),
+		);
+		return;
+	}
+	warnings.push(
+		warning(
+			source,
+			"forge.timeout",
+			"timeout",
+			`Expected a positive integer number of milliseconds, got ${describeExpected(value.timeout)}.`,
+			"The legacy timeout was ignored.",
+			"Use timeoutMs with a positive whole number such as 30000.",
+		),
+	);
+}
+
+function parseTestCommands(
+	value: Record<string, unknown>,
+	source: string,
+	parsed: Record<string, unknown>,
+	warnings: ForgeSettingsWarning[],
+): void {
+	if (!("testCommands" in value)) return;
+	if (validNonEmptyStringArray(value.testCommands)) {
+		parsed.testCommands = value.testCommands;
+		return;
+	}
+	warnings.push(
+		warning(
+			source,
+			"forge.testCommands",
+			"testCommands",
+			`Expected a non-empty array of non-empty command strings, got ${describeExpected(value.testCommands)}.`,
+			"Using the previous/default test commands.",
+			'Set testCommands to an array such as ["pnpm typecheck", "pnpm test"].',
+		),
+	);
+}
+
+function parseLegacyTestCommand(
+	value: Record<string, unknown>,
+	source: string,
+	parsed: Record<string, unknown>,
+	warnings: ForgeSettingsWarning[],
+): void {
+	if (!("testCommand" in value)) return;
+	const result = nonEmptyStringSchema.safeParse(value.testCommand);
+	if (result.success) {
+		parsed.testCommand = result.data;
+		warnings.push(
+			warning(
+				source,
+				"forge.testCommand",
+				"testCommand",
+				"Legacy Forge testCommand key is deprecated.",
+				"Accepted for compatibility as a one-item testCommands list.",
+				"Rename testCommand to testCommands and wrap the command in an array.",
+			),
+		);
+		return;
+	}
+	warnings.push(
+		warning(
+			source,
+			"forge.testCommand",
+			"testCommand",
+			`Expected a non-empty command string, got ${describeExpected(value.testCommand)}.`,
+			"The legacy testCommand was ignored.",
+			"Use testCommands with a non-empty array of command strings.",
+		),
+	);
+}
+
+function parseSkills(
+	value: Record<string, unknown>,
+	source: string,
+	parsed: Record<string, unknown>,
+	warnings: ForgeSettingsWarning[],
+): void {
+	if (!("skills" in value)) return;
+	const skillsValue = value.skills;
+	if (
+		typeof skillsValue !== "object" ||
+		skillsValue === null ||
+		Array.isArray(skillsValue)
+	) {
+		warnings.push(
+			warning(
+				source,
+				"forge.skills",
+				"skills",
+				`Expected an object keyed by Forge AI step names, got ${describeExpected(skillsValue)}.`,
+				"Using the previous/default skills map.",
+				`Set skills to an object with keys such as ${FORGE_AI_STEPS.join(", ")}.`,
+			),
+		);
+		return;
+	}
+	const validSkills = parseSkillSteps(
+		skillsValue as Record<string, unknown>,
+		source,
+		warnings,
+	);
+	if (Object.keys(validSkills).length > 0) parsed.skills = validSkills;
+}
+
+function parseSkillSteps(
+	rawSkills: Record<string, unknown>,
+	source: string,
+	warnings: ForgeSettingsWarning[],
+): Partial<Record<ForgeAiStep, string[]>> {
+	const validSkills: Partial<Record<ForgeAiStep, string[]>> = {};
+	for (const [step, skillList] of Object.entries(rawSkills)) {
+		if (!FORGE_AI_STEP_SET.has(step)) {
+			warnings.push(
+				warning(
+					source,
+					`forge.skills.${step}`,
+					step,
+					"Unknown Forge skill step name.",
+					"The skill step was ignored.",
+					`Use one of: ${FORGE_AI_STEPS.join(", ")}.`,
+				),
+			);
+			continue;
+		}
+		if (validNonEmptyStringArray(skillList)) {
+			validSkills[step as ForgeAiStep] = skillList;
+			continue;
+		}
+		warnings.push(
+			warning(
+				source,
+				`forge.skills.${step}`,
+				step,
+				`Expected a non-empty array of non-empty skill names, got ${describeExpected(skillList)}.`,
+				"Using the previous/default skills for this step.",
+				`Set skills.${step} to an array such as [\"tdd\"].`,
+			),
+		);
+	}
+	return validSkills;
+}
+
+function validateRawForgeSettings(
+	value: Record<string, unknown>,
+	source: string,
+): RawForgeSettingsParseResult {
+	const warnings: ForgeSettingsWarning[] = [];
+	const parsed: Record<string, unknown> = {};
+	warnUnknownForgeKeys(value, source, warnings);
+	parseRetries(value, source, parsed, warnings);
+	parseTimeoutMs(value, source, parsed, warnings);
+	parseLegacyTimeout(value, source, parsed, warnings);
+	parseTestCommands(value, source, parsed, warnings);
+	parseLegacyTestCommand(value, source, parsed, warnings);
+	parseSkills(value, source, parsed, warnings);
+	return {
+		settings: rawForgeSettingsSchema.parse(parsed),
+		warnings,
+	};
+}
+
+export function parseRawForgeSettingsWithWarnings(
+	value: unknown,
+	source = "settings",
+): RawForgeSettingsParseResult {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return {
+			settings: undefined,
+			warnings: [
+				warning(
+					source,
+					"forge",
+					"forge",
+					`Expected the forge setting to be an object, got ${describeExpected(value)}.`,
+					"Forge ignored this settings section.",
+					"Set forge to an object containing Forge settings.",
+				),
+			],
+		};
+	}
+	return validateRawForgeSettings(value as Record<string, unknown>, source);
+}
+
 export function parseRawForgeSettings(
 	value: unknown,
 ): RawForgeSettings | undefined {
-	if (typeof value !== "object" || value === null || Array.isArray(value)) {
-		return undefined;
-	}
-	return rawForgeSettingsSchema.parse(value);
+	return parseRawForgeSettingsWithWarnings(value).settings;
+}
+
+export function mergeForgeSettingsWithWarnings(
+	base: ForgeSettings,
+	override: unknown,
+	source = "settings",
+): { settings: ForgeSettings; warnings: ForgeSettingsWarning[] } {
+	const parsed = parseRawForgeSettingsWithWarnings(override, source);
+	if (!parsed.settings) return { settings: base, warnings: parsed.warnings };
+	return {
+		settings: forgeSettingsSchema.parse({
+			retries: parsed.settings.retries ?? base.retries,
+			timeoutMs:
+				parsed.settings.timeoutMs ?? parsed.settings.timeout ?? base.timeoutMs,
+			testCommands:
+				parsed.settings.testCommands ??
+				(parsed.settings.testCommand
+					? [parsed.settings.testCommand]
+					: base.testCommands),
+			skills: {
+				...base.skills,
+				...(parsed.settings.skills ?? {}),
+			},
+		}),
+		warnings: parsed.warnings,
+	};
 }
 
 export function mergeForgeSettings(
 	base: ForgeSettings,
 	override: unknown,
 ): ForgeSettings {
-	const parsed = parseRawForgeSettings(override);
-	if (!parsed) return base;
-	return forgeSettingsSchema.parse({
-		retries: parsed.retries ?? base.retries,
-		timeoutMs: parsed.timeoutMs ?? parsed.timeout ?? base.timeoutMs,
-		testCommands:
-			parsed.testCommands ??
-			(parsed.testCommand ? [parsed.testCommand] : base.testCommands),
-		skills: {
-			...base.skills,
-			...(parsed.skills ?? {}),
-		},
-	});
+	return mergeForgeSettingsWithWarnings(base, override).settings;
 }
 
 export function generateForgeSettingsSample(): ForgeSettings {

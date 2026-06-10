@@ -59,6 +59,52 @@ process.exit(handler.exitCode || 0);
 	};
 }
 
+async function withProjectSettings(t, contents) {
+	const cwd = join(tmpdir(), `forge-project-${Date.now()}-${Math.random()}`);
+	const piDir = join(cwd, ".pi");
+	await mkdir(piDir, { recursive: true });
+	await writeFile(join(piDir, "settings.json"), contents);
+	t.after(async () => {
+		await rm(cwd, { recursive: true, force: true });
+	});
+	return cwd;
+}
+
+async function invokeForge(t, { cwd, trusted = true } = {}) {
+	await withFakeTicketCommands(t, {
+		gh: { stdout: "{}" },
+		linear: { stdout: "Linear issue" },
+	});
+	let forgeHandler;
+	const sentMessages = [];
+	const notifications = [];
+	const pi = {
+		on() {},
+		registerCommand(name, command) {
+			if (name === "forge") forgeHandler = command.handler;
+		},
+		sendUserMessage(message) {
+			sentMessages.push(message);
+		},
+	};
+
+	registerForgeExtension(pi);
+
+	await forgeHandler("ABC-123", {
+		cwd: cwd ?? repoRoot,
+		isIdle: () => true,
+		isProjectTrusted: () => trusted,
+		ui: {
+			notify(message, level) {
+				notifications.push({ message, level });
+			},
+			setStatus() {},
+		},
+	});
+
+	return { sentMessages, notifications };
+}
+
 test("/forge keeps the user's context after the ticket selector", async () => {
 	let forgeHandler;
 	const sentMessages = [];
@@ -205,6 +251,122 @@ test("/forge includes project forge settings when project is trusted", async (t)
 	assert.match(
 		sentMessages[0],
 		/finalVerify: vette, thermo-nuclear-code-quality-review/,
+	);
+});
+
+test("/forge warns about invalid testCommands and uses fallback commands", async (t) => {
+	const cwd = await withProjectSettings(
+		t,
+		JSON.stringify({ forge: { testCommands: "pnpm test" } }),
+	);
+
+	const { sentMessages, notifications } = await invokeForge(t, { cwd });
+
+	assert.equal(sentMessages.length, 1);
+	assert.match(sentMessages[0], /# Forge settings warnings/);
+	assert.match(
+		sentMessages[0],
+		/project \.pi\/settings\.json forge\.testCommands/,
+	);
+	assert.match(
+		sentMessages[0],
+		/Expected a non-empty array of non-empty command strings/,
+	);
+	assert.match(sentMessages[0], /Using the previous\/default test commands/);
+	assert.match(sentMessages[0], /pnpm typecheck/);
+	assert.match(sentMessages[0], /pnpm test/);
+	assert.ok(
+		notifications.some(
+			(notification) =>
+				notification.level === "warning" &&
+				/Forge ignored or adapted/.test(notification.message),
+		),
+	);
+});
+
+test("/forge keeps valid skill siblings while warning about invalid skill steps", async (t) => {
+	const cwd = await withProjectSettings(
+		t,
+		JSON.stringify({
+			forge: {
+				skills: {
+					red: ["custom-red"],
+					green: [],
+				},
+			},
+		}),
+	);
+
+	const { sentMessages } = await invokeForge(t, { cwd });
+
+	assert.equal(sentMessages.length, 1);
+	assert.match(sentMessages[0], /red: custom-red/);
+	assert.match(sentMessages[0], /green: tdd, naming/);
+	assert.match(sentMessages[0], /forge\.skills\.green/);
+	assert.match(
+		sentMessages[0],
+		/Expected a non-empty array of non-empty skill names/,
+	);
+});
+
+test("/forge warns about legacy testCommand while preserving compatibility", async (t) => {
+	const cwd = await withProjectSettings(
+		t,
+		JSON.stringify({ forge: { testCommand: "pnpm --filter app test" } }),
+	);
+
+	const { sentMessages } = await invokeForge(t, { cwd });
+
+	assert.equal(sentMessages.length, 1);
+	assert.match(sentMessages[0], /forge\.testCommand/);
+	assert.match(sentMessages[0], /Legacy Forge testCommand key is deprecated/);
+	assert.match(
+		sentMessages[0],
+		/Accepted for compatibility as a one-item testCommands list/,
+	);
+	assert.match(sentMessages[0], /pnpm --filter app test/);
+});
+
+test("/forge warns about malformed trusted project settings JSON", async (t) => {
+	const cwd = await withProjectSettings(
+		t,
+		'{ "forge": { "testCommands": ["pnpm test"], }',
+	);
+
+	const { sentMessages, notifications } = await invokeForge(t, { cwd });
+
+	assert.equal(sentMessages.length, 1);
+	assert.match(sentMessages[0], /# Forge settings warnings/);
+	assert.match(sentMessages[0], /project \.pi\/settings\.json <root>/);
+	assert.match(sentMessages[0], /malformed JSON/);
+	assert.ok(
+		notifications.some(
+			(notification) =>
+				notification.level === "warning" &&
+				/settings issue/.test(notification.message),
+		),
+	);
+});
+
+test("/forge warns when untrusted project settings are skipped", async (t) => {
+	const cwd = await withProjectSettings(
+		t,
+		JSON.stringify({ forge: { retries: 3, testCommands: ["pnpm custom"] } }),
+	);
+
+	const { sentMessages, notifications } = await invokeForge(t, {
+		cwd,
+		trusted: false,
+	});
+
+	assert.equal(sentMessages.length, 1);
+	assert.match(sentMessages[0], /# Forge settings warnings/);
+	assert.match(sentMessages[0], /Project settings are not trusted/);
+	assert.match(sentMessages[0], /Forge skipped the project settings file/);
+	assert.match(sentMessages[0], /retries: 0/);
+	assert.doesNotMatch(sentMessages[0], /pnpm custom/);
+	assert.ok(
+		notifications.some((notification) => notification.level === "warning"),
 	);
 });
 

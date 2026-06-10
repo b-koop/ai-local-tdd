@@ -507,6 +507,16 @@ test("readers see the kept-user-context behavior as a verified feature spec", as
 	]);
 });
 
+test("readers see the untrusted ticket text labeling behavior as a verified feature spec", async () => {
+	const scenarioNames = await readVerifiedFeatureSpec(
+		"forge-labels-ticket-text-untrusted.feature",
+	);
+
+	assert.deepEqual(scenarioNames, [
+		"/forge labels ticket lookup text as untrusted before agents read it",
+	]);
+});
+
 test("/forge blocks dash-prefixed input before ticket lookup commands receive it", async (t) => {
 	const fakeCommands = await withFakeTicketCommands(t, {
 		gh: { stdout: "{}" },

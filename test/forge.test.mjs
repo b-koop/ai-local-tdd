@@ -563,9 +563,9 @@ test("readers see the TDD micro-cycle workflow as a concise companion feature sp
 	const guide = await readFile(guidePath, "utf8");
 	assert.match(guide, /## Related behavior spec/);
 
-	const scenarioNames = (await readFeatureSpecScenarios(
-		"tdd-microcycle-workflow.feature",
-	)).map((scenario) => scenario.name);
+	const scenarioNames = (
+		await readFeatureSpecScenarios("tdd-microcycle-workflow.feature")
+	).map((scenario) => scenario.name);
 	assert.ok(scenarioNames.length >= 1);
 });
 

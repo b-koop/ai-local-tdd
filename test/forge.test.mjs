@@ -528,6 +528,20 @@ test("readers see the settings synchronization behavior as a verified feature sp
 	]);
 });
 
+test("readers see the settings warnings and fallbacks behavior as a verified feature spec", async () => {
+	const scenarioNames = await readVerifiedFeatureSpec(
+		"forge-settings-warnings.feature",
+	);
+
+	assert.deepEqual(scenarioNames, [
+		"/forge warns about invalid testCommands and uses fallback commands",
+		"/forge keeps valid skill siblings while warning about invalid skill steps",
+		"/forge warns about legacy testCommand while preserving compatibility",
+		"/forge warns about malformed trusted project settings JSON",
+		"/forge warns when untrusted project settings are skipped",
+	]);
+});
+
 test("/forge blocks dash-prefixed input before ticket lookup commands receive it", async (t) => {
 	const fakeCommands = await withFakeTicketCommands(t, {
 		gh: { stdout: "{}" },

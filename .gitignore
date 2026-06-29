@@ -2,9 +2,17 @@ node_modules/
 .pnpm/
 dist/
 coverage/
+*.tgz
 .DS_Store
 .env
 .env.*
 !.env.example
 
+# Local AI agent/workflow state
+.rpiv/
+.agents/
+.agency/
 .forge/
+.claude/
+.cursor/
+.codex/

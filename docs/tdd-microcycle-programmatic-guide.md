@@ -31,6 +31,11 @@ Drive one behavior slice from the next smallest test through red, green, refacto
 ```
 
 - Keep test-only, production-only, verification, and cleanup work separated by phase.
+- When Pi agents are available, use these concrete phase agents:
+  `forge-intake`, `forge-decompose`, `forge-red`, `forge-verify-red`,
+  `forge-green`, `forge-refactor`, and `forge-final-verify`. Bundled defaults
+  live in `agents/`; copy them to `.pi/agents/` when project customization is
+  needed.
 
 ## Programmatic loop
 

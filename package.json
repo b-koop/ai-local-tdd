@@ -24,6 +24,7 @@
     ]
   },
   "files": [
+    "agents/",
     "dist/",
     "docs/",
     "features/",

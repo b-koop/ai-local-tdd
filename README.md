@@ -40,6 +40,28 @@ Forge requires the agent to:
 - create a temporary red checkpoint commit for the failing test, then squash red/green/cleanup into one final commit per behavior slice,
 - clean up completed agent worktrees, temporary branches, and checkpoint commits.
 
+## Forge phase agents
+
+This package bundles default Pi subagent prompts in `agents/` and can copy them
+into the project-local `.pi/agents/` directory for customization:
+
+- `forge-intake`
+- `forge-decompose`
+- `forge-red`
+- `forge-verify-red`
+- `forge-green`
+- `forge-refactor`
+- `forge-final-verify`
+
+When `/forge` starts, it checks the normal Pi agent locations for those names:
+project-local `.pi/agents/` and user-global `~/.pi/agent/agents/`. If any are
+missing, `/forge` asks whether to copy the bundled defaults from `agents/` into
+`.pi/agents/`. If the agents already exist, Forge just names them in the prompt
+so customized project or global versions can be used.
+
+The `/forge` command still owns orchestration, git state, checkpoint commits,
+squashing, and final cleanup.
+
 ## Settings
 
 Forge reads an optional `forge` section from Pi settings. Global settings live in `~/.pi/agent/settings.json`; trusted project settings live in `.pi/settings.json` and override global values. The default settings sample is generated from the Zod-validated config model in `src/forge-config.ts` and checked against `docs/data/forge-settings.sample.json`. Regenerate it with `pnpm generate:forge-settings` after changing defaults.

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -59,11 +59,12 @@ process.exit(handler.exitCode || 0);
 	return {
 		async calls() {
 			try {
-				return (await readFile(callsPath, "utf8"))
+				const callsSource = await readFile(callsPath, "utf8");
+				return callsSource
 					.trim()
 					.split("\n")
 					.filter(Boolean)
-					.map((line) => JSON.parse(line));
+					.map((line) => parseJsonFixture(line, "ticket command call"));
 			} catch {
 				return [];
 			}
@@ -82,11 +83,44 @@ async function withProjectSettings(t, contents) {
 	return cwd;
 }
 
+function parseJsonFixture(source, context) {
+	try {
+		return JSON.parse(source);
+	} catch (error) {
+		assert.fail(`${context} must be valid JSON: ${error.message}`);
+	}
+}
+
 async function readBehaviorTestNames() {
-	const source = await readFile(new URL(import.meta.url), "utf8");
+	let source;
+	try {
+		source = await readFile(new URL(import.meta.url), "utf8");
+	} catch (error) {
+		assert.fail(`test source must be readable: ${error.message}`);
+	}
 	return [...source.matchAll(/^test\(\s*"((?:[^"\\]|\\.)*)"/gm)].map((match) =>
-		JSON.parse(`"${match[1]}"`),
+		parseJsonFixture(`"${match[1]}"`, "test name"),
 	);
+}
+
+function parseAgentDefinition(fileName, source) {
+	const match = source.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+	assert.ok(match, `${fileName} must use YAML frontmatter`);
+	const frontmatter = Object.fromEntries(
+		match[1].split("\n").map((line) => {
+			const separator = line.indexOf(":");
+			assert.notEqual(
+				separator,
+				-1,
+				`${fileName} frontmatter line must be key: value`,
+			);
+			return [
+				line.slice(0, separator).trim(),
+				line.slice(separator + 1).trim(),
+			];
+		}),
+	);
+	return { frontmatter, body: match[2] };
 }
 
 function parseFeatureScenarios(featureFileName, feature) {
@@ -209,6 +243,88 @@ test("/forge keeps the user's context after the ticket selector", async () => {
 
 	assert.equal(sentMessages.length, 1);
 	assert.match(sentMessages[0], /preserve-context-unique/);
+	for (const agentName of [
+		"forge-intake",
+		"forge-decompose",
+		"forge-red",
+		"forge-verify-red",
+		"forge-green",
+		"forge-refactor",
+		"forge-final-verify",
+	]) {
+		assert.match(
+			sentMessages[0],
+			new RegExp(`\\b${agentName}\\b`),
+			`/forge prompt should name ${agentName}`,
+		);
+	}
+});
+
+test("/forge offers to copy bundled agents when proper locations are missing", async (t) => {
+	const cwd = join(tmpdir(), `forge-agents-${Date.now()}-${Math.random()}`);
+	const userAgentsDir = join(
+		tmpdir(),
+		`forge-user-agents-${Date.now()}-${Math.random()}`,
+	);
+	await Promise.all([
+		mkdir(cwd, { recursive: true }),
+		mkdir(userAgentsDir, { recursive: true }),
+	]);
+	const oldUserAgentsDir = process.env.PI_FORGE_USER_AGENTS_DIR;
+	process.env.PI_FORGE_USER_AGENTS_DIR = userAgentsDir;
+	t.after(async () => {
+		if (oldUserAgentsDir === undefined)
+			delete process.env.PI_FORGE_USER_AGENTS_DIR;
+		else process.env.PI_FORGE_USER_AGENTS_DIR = oldUserAgentsDir;
+		await Promise.all([
+			rm(cwd, { recursive: true, force: true }),
+			rm(userAgentsDir, { recursive: true, force: true }),
+		]);
+	});
+
+	let forgeHandler;
+	const sentMessages = [];
+	const confirmations = [];
+	const notifications = [];
+	const pi = {
+		on() {},
+		registerCommand(name, command) {
+			if (name === "forge") forgeHandler = command.handler;
+		},
+		sendUserMessage(message) {
+			sentMessages.push(message);
+		},
+	};
+
+	registerForgeExtension(pi);
+
+	await forgeHandler("", {
+		cwd,
+		isIdle: () => true,
+		ui: {
+			confirm(title, message) {
+				confirmations.push({ title, message });
+				return Promise.resolve(true);
+			},
+			notify(message, level) {
+				notifications.push({ message, level });
+			},
+			setStatus() {},
+		},
+	});
+
+	assert.equal(confirmations.length, 1);
+	assert.match(confirmations[0].message, /forge-red/);
+	assert.match(confirmations[0].message, /\.pi\/agents/);
+	const copiedRedAgent = await readFile(
+		join(cwd, ".pi", "agents", "forge-red.md"),
+		"utf8",
+	);
+	assert.match(copiedRedAgent, /^name:\s*forge-red$/m);
+	assert.match(sentMessages[0], /Copied bundled agents this run: yes/);
+	assert.ok(
+		notifications.some(({ message }) => /Copied Forge agents/.test(message)),
+	);
 });
 
 test("/forge labels ticket lookup text as untrusted before agents read it", async (t) => {
@@ -493,7 +609,10 @@ test("forge settings sample is generated from the Zod-validated defaults", async
 		"data",
 		"forge-settings.sample.json",
 	);
-	const sample = JSON.parse(await readFile(samplePath, "utf8"));
+	const sample = parseJsonFixture(
+		await readFile(samplePath, "utf8"),
+		"forge settings sample",
+	);
 
 	assert.deepEqual(sample, generateForgeSettingsFileSample());
 	assert.deepEqual(sample.forge.testCommands, DEFAULT_TEST_COMMANDS);
@@ -519,7 +638,7 @@ test("readers see the current forge settings defaults in the TDD guide", async (
 	const settingsExamples = [
 		...beforeYouBegin.matchAll(/```json\n([\s\S]*?)\n```/g),
 	]
-		.map((match) => JSON.parse(match[1]))
+		.map((match) => parseJsonFixture(match[1], "guide settings example"))
 		.filter(
 			(example) => example && typeof example === "object" && "forge" in example,
 		);
@@ -738,6 +857,77 @@ test("readers see the verified TDD micro-cycle feature spec at the public starti
 		"Refactor keeps observable behavior unchanged",
 		"The final commit is anchored to the recorded start hash",
 	]);
+});
+
+test("built Pi extension entry delegates to the src implementation", async () => {
+	const extensionEntry = await readFile(
+		join(repoRoot, "dist", "extensions", "forge.js"),
+		"utf8",
+	);
+	const implementation = await readFile(
+		join(repoRoot, "dist", "src", "forge.js"),
+		"utf8",
+	);
+
+	assert.match(extensionEntry, /from "\.\.\/src\/forge\.js"/);
+	assert.doesNotMatch(extensionEntry, /function buildForgePrompt/);
+	assert.match(implementation, /function buildForgePrompt/);
+});
+
+test("Forge phase contracts are available as bundled Pi agents", async () => {
+	const expectedAgents = {
+		"forge-intake": [/requirements/i, /open questions/i],
+		"forge-decompose": [/smallest behavior/i, /dependencies/i],
+		"forge-red": [/test-only/i, /Do not edit production code/i],
+		"forge-verify-red": [/read-only/i, /intended missing behavior/i],
+		"forge-green": [/production/i, /Do not edit test/i],
+		"forge-refactor": [/No new behavior/i, /focused test remains green/i],
+		"forge-final-verify": [/commit ancestry/i, /temporary red/i],
+	};
+	const agentsDir = join(repoRoot, "agents");
+	const agentDefinitions = new Map();
+
+	for (const fileName of await readdir(agentsDir)) {
+		if (!fileName.endsWith(".md")) continue;
+		const source = await readFile(join(agentsDir, fileName), "utf8");
+		const definition = parseAgentDefinition(fileName, source);
+		agentDefinitions.set(definition.frontmatter.name, definition);
+	}
+
+	const manifest = parseJsonFixture(
+		await readFile(join(repoRoot, "package.json"), "utf8"),
+		"package manifest",
+	);
+	assert.ok(
+		manifest.files.includes("agents/"),
+		"published package must include the bundled Forge agents",
+	);
+
+	for (const [agentName, requiredPatterns] of Object.entries(expectedAgents)) {
+		const definition = agentDefinitions.get(agentName);
+		assert.ok(definition, `${agentName} must be defined in agents/`);
+		assert.ok(
+			definition.frontmatter.description,
+			`${agentName} must explain when to use the agent`,
+		);
+		assert.match(
+			definition.frontmatter.tools,
+			/read/,
+			`${agentName} must declare usable tool access`,
+		);
+		assert.match(
+			definition.body,
+			/Output format/i,
+			`${agentName} must tell parent agents what result to expect`,
+		);
+		for (const pattern of requiredPatterns) {
+			assert.match(
+				definition.body,
+				pattern,
+				`${agentName} must include ${pattern}`,
+			);
+		}
+	}
 });
 
 test("trusted contributor pull requests and mainline pushes run validation", async () => {

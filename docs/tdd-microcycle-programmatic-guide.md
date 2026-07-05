@@ -47,6 +47,9 @@ Drive one behavior slice from the next smallest test through red, green, refacto
   `forge-green`, `forge-refactor`, and `forge-final-verify`. Bundled defaults
   live in `agents/`; copy them to `.pi/agents/` when project customization is
   needed.
+- Select the model for each phase through `smart-model-run` using the profile in
+  the `/forge` prompt. Red and green should favor correctness and reliable tool
+  use; read-only phases should stay cheaper unless `smart-model-run` escalates.
 
 ## Programmatic loop
 

@@ -17,7 +17,7 @@ Feature: TDD micro-cycle workflow is observable and verifiable
     Scenario: The run backlog is reused without becoming a project artifact
       Given Forge has recorded the testable behavior backlog for a run
       When the operator reviews the project changes
-      Then the backlog file is available at ".tmp/forge/<name>.jsonl"
+      Then the backlog file is available at ".tmp/.forge/<name>.jsonl"
       And the backlog file is not included in tracked project changes
 
   Rule: Forge completes each recorded behavior through the TDD procedure

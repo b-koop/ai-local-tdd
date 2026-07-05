@@ -12,7 +12,7 @@ coverage/
 .rpiv/
 .agents/
 .agency/
-.forge/
+.tmp/.forge/
 .claude/
 .cursor/
 .codex/

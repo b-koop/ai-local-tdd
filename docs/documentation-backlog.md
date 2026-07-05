@@ -3,12 +3,12 @@
 Status: planning backlog, not implemented.
 Audience: contributors maintaining project documentation.
 
-Public durable docs belong in committed `docs/` and `features/` files. `.forge/` is reserved for generated per-run files. The GitHub wiki is exploratory and non-normative.
+Public durable docs belong in committed `docs/` and `features/` files. `.tmp/.forge/` is reserved for generated per-run files. The GitHub wiki is exploratory and non-normative.
 
 ## Recommended committed docs
 
 1. `docs/run-artifacts.md`
-   - `.forge/runs/<slug>/state.json`
+   - `.tmp/.forge/runs/<slug>/state.json`
    - notes Markdown
    - generated feature/spec file
    - logs and retry history

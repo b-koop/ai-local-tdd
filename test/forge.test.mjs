@@ -733,7 +733,7 @@ test("The run backlog is reused without becoming a project artifact", async () =
 
 	assert.match(
 		feature,
-		/backlog file is available at "\.tmp\/forge\/<name>\.jsonl"/,
+		/backlog file is available at "\.tmp\/\.forge\/<name>\.jsonl"/,
 	);
 	assert.match(feature, /not included in tracked project changes/);
 });
@@ -899,6 +899,24 @@ test("Final verification runs all unit tests before the final green commit", asy
 		prompt,
 		/Do not create the final slice commit until all configured validation commands, including the all-unit-test command, pass/,
 	);
+});
+
+test("/forge routes phase agents through smart-model-run profiles", async (t) => {
+	const { sentMessages } = await invokeForge(t);
+
+	assert.equal(sentMessages.length, 1);
+	const prompt = sentMessages[0];
+
+	assert.match(prompt, /# Smart model phase routing/);
+	assert.match(prompt, /import \{ smartRun \} from "smart-model-run"/);
+	assert.match(prompt, /red → forge-red: budget=mid, ceiling=high/);
+	assert.match(prompt, /green → forge-green: budget=mid, ceiling=high/);
+	assert.match(
+		prompt,
+		/finalVerify → forge-final-verify: budget=cheap, ceiling=mid/,
+	);
+	assert.match(prompt, /needs=reliable-tools\+correctness\+codeQuality/);
+	assert.match(prompt, /block that phase and report the attempted selectors/);
 });
 
 test("readers see the kept-user-context behavior as a verified feature spec", async () => {

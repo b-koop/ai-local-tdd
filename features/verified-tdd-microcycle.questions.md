@@ -8,9 +8,9 @@ Feature file: `features/verified-tdd-microcycle.feature`
   - Context: The story requires a reusable JSONL backlog file that is not tracked by git, but no path or naming convention was specified in the starting point or existing docs.
   - Scenario tags: @scenario-backlog-untracked
   - Rule tags: @rule-run-backlog
-  - Answer: Use `.tmp/forge/<name>.jsonl`.
+  - Answer: Use `.tmp/.forge/<name>.jsonl`.
   - Source: user intake answer
-  - Scenario update: Updated @scenario-backlog-untracked to cover the reusable backlog path `.tmp/forge/<name>.jsonl` while keeping it out of tracked project changes.
+  - Scenario update: Updated @scenario-backlog-untracked to cover the reusable backlog path `.tmp/.forge/<name>.jsonl` while keeping it out of tracked project changes.
 
 - [x] Q-FORGE-TDD-RUN-BACKLOG-001: What status lifecycle should each JSONL behavior item use during the Forge run?
   - Scenario tags: @scenario-record-testable-items, @scenario-select-next-smallest-slice, @scenario-green-smallest-change, @scenario-refactor-keeps-behavior, @scenario-complete-or-block-item

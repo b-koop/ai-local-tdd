@@ -44,12 +44,12 @@ Purpose: allow Forge to create local state without polluting git.
 
 Passes when:
 
-- generated artifacts are under `.forge/runs/<slug>/`
-- `.forge/` is ignored by git
+- generated artifacts are under `.tmp/.forge/runs/<slug>/`
+- `.tmp/.forge/` is ignored by git
 
 Fails when:
 
-- generated run state appears outside `.forge/runs/<slug>/`
+- generated run state appears outside `.tmp/.forge/runs/<slug>/`
 
 Recovery:
 

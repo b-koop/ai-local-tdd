@@ -166,6 +166,12 @@ asks whether to copy bundled defaults into `.pi/agents/`. If agents already
 exist, Forge only names them in the prompt so project or user customizations can
 be used.
 
+Forge's orchestration prompt routes phase-agent dispatch through
+`smart-model-run` profiles instead of one fixed model. Red and green use higher
+correctness/tool-reliability profiles; read-only planning and verification use
+cheaper profiles unless selection needs to escalate. When the user passes
+`--local`, those profiles require `local: true` and local provider selectors.
+
 ## Settings
 
 Forge reads an optional `forge` section from Pi settings.
@@ -267,7 +273,7 @@ functions. Existing feature coverage includes:
 
 Known spec gaps are tracked in
 [`docs/documentation-backlog.md`](docs/documentation-backlog.md). In particular,
-planned run-artifact behavior under `.forge/runs/<slug>/` is documented in
+planned run-artifact behavior under `.tmp/.forge/runs/<slug>/` is documented in
 [`docs/run-artifacts.md`](docs/run-artifacts.md) but is not presented here as an
 implemented feature.
 
@@ -300,8 +306,8 @@ boundaries:
 
 - Forge's extension implementation constructs the orchestration prompt; it does
   not yet implement every deterministic gate as executable code.
-- `.forge/runs/<slug>/` run artifacts are planned and documented, but remain a
-  proposal until implemented.
+- `.tmp/.forge/runs/<slug>/` run artifacts are planned and documented, but
+  remain a proposal until implemented.
 - The public package includes bundled agents, docs, features, compiled output,
   README, and license.
 - The GitHub wiki is exploratory and non-normative; accepted behavior belongs in

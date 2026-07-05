@@ -10,7 +10,7 @@ In:
 
 - direct current worktree
 - clean-start gate before any AI call
-- `.forge/runs/<slug>/` generated run artifacts
+- `.tmp/.forge/runs/<slug>/` generated run artifacts
 - JSON state plus Markdown notes plus generated behavior feature
 - ordered behavior slices with dependencies
 - red/verify/green loop
@@ -30,14 +30,14 @@ Out:
 
 - If the repo is dirty at start, Forge lists the files and stops.
 - No AI is called before the clean-start gate passes.
-- After Forge setup, only ignored `.forge/runs/<slug>/` artifacts are allowed outside git.
+- After Forge setup, only ignored `.tmp/.forge/runs/<slug>/` artifacts are allowed outside git.
 
 ## Planning phase
 
 - `/forge <details>` starts read-only research and planning.
 - AI may research ideas/functionality but may not edit code.
 - AI may propose planning content, but only Forge writes artifacts after validating paths, schema, and allowed file locations.
-- Each run lives under `.forge/runs/<slug>/`.
+- Each run lives under `.tmp/.forge/runs/<slug>/`.
 - The run uses:
   - `state.json` for machine-readable state
   - Markdown notes for human-readable planning

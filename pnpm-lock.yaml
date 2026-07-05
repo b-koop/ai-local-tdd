@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      smart-model-run:
+        specifier: 0.2.0
+        version: 0.2.0
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -548,6 +551,9 @@ packages:
 
   signal-exit@3.0.7:
     resolution: {integrity: sha512-wnD2ZE+l+SPC/uoS0vXeE9L1+0wuaMqKlfz9AMUo38JsyLSBWSFcHR1Rri62LZc12vLr1gb3jl7iwQhgwpAbGQ==}
+
+  smart-model-run@0.2.0:
+    resolution: {integrity: sha512-2GSZrmX+DKJ6szjfhuq/t9y5LhFPanpmDmuOaB/Ln7gDNlxFT220fQaUB6+RIMdspdzV6U1G+X0vv3yJTGVTIQ==}
 
   strnum@2.3.0:
     resolution: {integrity: sha512-ums3KNd42PGyx5xaoVTO1mjU1bH3NpY4vsrVlnv9PNGqQj8wd7rJ6nEypLrJ7z5vxK5RP0yMLo6J/Gsm62DI5Q==}
@@ -1287,6 +1293,8 @@ snapshots:
   shebang-regex@3.0.0: {}
 
   signal-exit@3.0.7: {}
+
+  smart-model-run@0.2.0: {}
 
   strnum@2.3.0: {}
 

@@ -1,0 +1,1 @@
+{"id":"DEF-FORGE-TDD-RUN-BACKLOG-001","questionId":"Q-FORGE-TDD-RUN-BACKLOG-003","classification":"deferred-nonblocking","reason":"The current scenarios can require a reusable untracked JSONL backlog without naming the exact path; implementation can choose a safe run-artifact location later.","createdAt":"2026-07-05T00:00:00Z"}

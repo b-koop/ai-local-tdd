@@ -1,0 +1,4 @@
+{"id":"Q-FORGE-TDD-RUN-BACKLOG-001","text":"What status lifecycle should each JSONL behavior item use during the Forge run?","status":"answered","createdAt":"2026-07-05T00:00:00Z"}
+{"id":"Q-FORGE-TDD-RUN-BACKLOG-002","text":"How should Forge handle the final end-to-end suite when this repo or a target project has no configured e2e command?","status":"answered","createdAt":"2026-07-05T00:00:00Z"}
+{"id":"Q-FORGE-TDD-RUN-BACKLOG-003","text":"What exact JSONL file path or naming convention should Forge use for the reusable untracked behavior backlog?","status":"deferred-nonblocking","createdAt":"2026-07-05T00:00:00Z"}
+{"id":"Q-FORGE-TDD-RUN-BACKLOG-004","text":"What level of failure-cause investigation is required before final cleanup continues after a full-suite failure?","status":"assumed","createdAt":"2026-07-05T00:00:00Z"}

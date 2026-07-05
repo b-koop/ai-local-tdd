@@ -35,6 +35,7 @@
     "@earendil-works/pi-coding-agent": "*"
   },
   "dependencies": {
+    "smart-model-run": "0.2.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

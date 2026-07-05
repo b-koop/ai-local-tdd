@@ -179,7 +179,7 @@ async function readVerifiedFeatureSpec(featureFileName) {
 	return scenarios.map((scenario) => scenario.name);
 }
 
-async function invokeForge(t, { cwd, trusted = true } = {}) {
+async function invokeForge(t, { cwd, trusted = true, input = "ABC-123" } = {}) {
 	await withFakeTicketCommands(t, {
 		gh: { stdout: "{}" },
 		linear: { stdout: "Linear issue" },
@@ -199,7 +199,7 @@ async function invokeForge(t, { cwd, trusted = true } = {}) {
 
 	registerForgeExtension(pi);
 
-	await forgeHandler("ABC-123", {
+	await forgeHandler(input, {
 		cwd: cwd ?? repoRoot,
 		isIdle: () => true,
 		isProjectTrusted: () => trusted,
@@ -452,6 +452,19 @@ test("/forge includes project forge settings when project is trusted", async (t)
 	);
 });
 
+test("/forge keeps ticket selection local when requested", async (t) => {
+	const { sentMessages } = await invokeForge(t, {
+		input: "--local ABC-123",
+	});
+
+	assert.equal(sentMessages.length, 1);
+	assert.match(sentMessages[0], /ABC-123/);
+	assert.match(sentMessages[0], /local:\s*true/);
+	assert.match(sentMessages[0], /ollama\/\*/);
+	assert.match(sentMessages[0], /lmstudio\/\*/);
+	assert.match(sentMessages[0], /local\/\*/);
+});
+
 test("/forge warns about invalid testCommands and uses fallback commands", async (t) => {
 	const cwd = await withProjectSettings(
 		t,
@@ -699,6 +712,32 @@ function guideSection(guide, heading) {
 	return match.groups.section;
 }
 
+test("Testable behavior items are recorded before TDD starts", async () => {
+	const feature = await readFile(
+		join(repoRoot, "features", "verified-tdd-microcycle.feature"),
+		"utf8",
+	);
+
+	assert.match(
+		feature,
+		/each individual testable behavior is recorded with status "todo"/,
+	);
+	assert.match(feature, /TDD implementation loop has not started yet/);
+});
+
+test("The run backlog is reused without becoming a project artifact", async () => {
+	const feature = await readFile(
+		join(repoRoot, "features", "verified-tdd-microcycle.feature"),
+		"utf8",
+	);
+
+	assert.match(
+		feature,
+		/backlog file is available at "\.tmp\/forge\/<name>\.jsonl"/,
+	);
+	assert.match(feature, /not included in tracked project changes/);
+});
+
 test("Select the next smallest behavior slice", async () => {
 	const guide = await readTddMicrocycleGuide();
 	const programmaticLoop = guideSection(guide, "Programmatic loop");
@@ -800,6 +839,68 @@ test("The final commit is anchored to the recorded start hash", async () => {
 	assert.match(commit, /no leftover temporary red commits/);
 });
 
+test("Forge finishes or blocks each recorded item before moving on", async () => {
+	const feature = await readFile(
+		join(repoRoot, "features", "verified-tdd-microcycle.feature"),
+		"utf8",
+	);
+
+	assert.match(feature, /passing behavior is marked with status "done"/);
+	assert.match(feature, /cannot continue is marked with status "blocked"/);
+});
+
+test("Final verification runs full suites after all items finish", async () => {
+	const feature = await readFile(
+		join(repoRoot, "features", "verified-tdd-microcycle.feature"),
+		"utf8",
+	);
+
+	assert.match(feature, /full unit test suite is executed/);
+	assert.match(feature, /every configured end-to-end test suite is executed/);
+});
+
+test("Missing end-to-end suite is skipped with evidence", async () => {
+	const feature = await readFile(
+		join(repoRoot, "features", "verified-tdd-microcycle.feature"),
+		"utf8",
+	);
+
+	assert.match(feature, /no end-to-end test suite command is configured/);
+	assert.match(feature, /records that no end-to-end suite was available/);
+});
+
+test("Final verification investigates suite failures before cleanup commit", async () => {
+	const feature = await readFile(
+		join(repoRoot, "features", "verified-tdd-microcycle.feature"),
+		"utf8",
+	);
+
+	assert.match(feature, /records the failing command and likely cause/);
+	assert.match(
+		feature,
+		/final cleanup is not committed while the failure remains unresolved/,
+	);
+});
+
+test("Final verification runs all unit tests before the final green commit", async (t) => {
+	const { sentMessages } = await invokeForge(t);
+
+	assert.equal(sentMessages.length, 1);
+	const prompt = sentMessages[0];
+	const finalVerifyStep = prompt.match(
+		/k\. Run final verify:[\s\S]*?\n\s+l\. Squash/,
+	)?.[0];
+
+	assert.ok(finalVerifyStep, "prompt must include a final verify step");
+	assert.match(finalVerifyStep, /all configured validation commands/);
+	assert.match(finalVerifyStep, /all unit tests/);
+	assert.match(finalVerifyStep, /before the final commit/i);
+	assert.match(
+		prompt,
+		/Do not create the final slice commit until all configured validation commands, including the all-unit-test command, pass/,
+	);
+});
+
 test("readers see the kept-user-context behavior as a verified feature spec", async () => {
 	const scenarioNames = await readVerifiedFeatureSpec(
 		"forge-keeps-user-context.feature",
@@ -851,10 +952,16 @@ test("readers see the verified TDD micro-cycle feature spec at the public starti
 	);
 
 	assert.deepEqual(scenarioNames, [
+		"Testable behavior items are recorded before TDD starts",
+		"The run backlog is reused without becoming a project artifact",
 		"Select the next smallest behavior slice",
 		"Red is verified as an intended failure",
 		"Green change is the smallest passing implementation",
 		"Refactor keeps observable behavior unchanged",
+		"Forge finishes or blocks each recorded item before moving on",
+		"Final verification runs full suites after all items finish",
+		"Missing end-to-end suite is skipped with evidence",
+		"Final verification investigates suite failures before cleanup commit",
 		"The final commit is anchored to the recorded start hash",
 	]);
 });
@@ -882,7 +989,12 @@ test("Forge phase contracts are available as bundled Pi agents", async () => {
 		"forge-verify-red": [/read-only/i, /intended missing behavior/i],
 		"forge-green": [/production/i, /Do not edit test/i],
 		"forge-refactor": [/No new behavior/i, /focused test remains green/i],
-		"forge-final-verify": [/commit ancestry/i, /temporary red/i],
+		"forge-final-verify": [
+			/commit ancestry/i,
+			/temporary red/i,
+			/all configured validation commands/i,
+			/all unit tests/i,
+		],
 	};
 	const agentsDir = join(repoRoot, "agents");
 	const agentDefinitions = new Map();

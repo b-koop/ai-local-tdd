@@ -8,8 +8,19 @@ Drive one behavior slice from the next smallest test through red, green, refacto
 
 - Work from a clean git index unless you intentionally resume an existing slice.
 - Know the behavior goal in domain language.
-- Know the repository's check commands, such as typecheck, lint, unit tests, or focused test commands.
-- Configure Forge in Pi settings when defaults are not enough. The default settings sample is generated from the Zod-validated config model in `src/forge-config.ts` and mirrored in `docs/data/forge-settings.sample.json`. `testCommands` is the ordered list of executable validation commands Forge passes to the agent prompt. Forge does not execute them directly; the agent should run or select from these commands as applicable for the current slice. The legacy `testCommand` string is still accepted and normalized to `testCommands: [testCommand]`, but new settings should use `testCommands`:
+- Know the repository's check commands, such as typecheck, lint, unit tests, or
+  focused test commands.
+- Configure Forge in Pi settings when defaults are not enough. The default
+  settings sample is generated from the Zod-validated config model in
+  `src/forge-config.ts` and mirrored in
+  `docs/data/forge-settings.sample.json`. `testCommands` is the ordered list of
+  executable validation commands Forge passes to the agent prompt. Forge does
+  not execute them directly; the agent should run or select from these commands
+  as applicable for the current slice, and final verification must run the full
+  list before the final green commit. Keep an all-unit-test command in this
+  list; the default is `pnpm test`. The legacy `testCommand` string is still
+  accepted and normalized to `testCommands: [testCommand]`, but new settings
+  should use `testCommands`:
 
 ```json
 {
@@ -49,7 +60,7 @@ verify_red_fails_for_intended_reason()
 make_smallest_production_change()
 verify_green()
 refactor_without_behavior_change()
-verify_fully_green()
+verify_fully_green_with_all_unit_tests()
 commit_final_green_slice()
 verify_commit_parent_is_start_hash()
 ```
@@ -95,7 +106,7 @@ These gates are command-level contracts for automation. Each gate names the comm
 | --- | --- | --- | --- |
 | Git state | `git status --short` before each phase. | Exit code `0`; output is empty or every listed path is intentionally assigned to the current slice. | Stop, classify each path, stash or revert unrelated changes, or document why the dirty state belongs to the slice; rerun before continuing. |
 | File boundaries | `git diff --name-only` after red, green, and refactor work. | Exit code `0`; red lists only tests/specs/fixtures, green lists only production/public contract files needed for the behavior, and refactor lists only files already in the slice. | Stop, move misplaced edits to the correct phase, or revert out-of-scope files; rerun before continuing. |
-| Test commands | `<focused test command>` plus `<required wider checks>` when the phase requires them. | Red: focused command exits non-zero for the intended test. Green/refactor/final: required commands exit code `0`. Captured output names the command and result. | Stop on syntax, setup, unrelated, or flaky failures; fix the right phase or split the behavior smaller, then rerun the exact failed command. |
+| Test commands | `<focused test command>` plus `<required wider checks>` when the phase requires them; final verification uses every configured `testCommands` entry. | Red: focused command exits non-zero for the intended test. Green/refactor/final: required commands exit code `0`; final includes the all-unit-test command. Captured output names the command and result. | Stop on syntax, setup, unrelated, or flaky failures; fix the right phase or split the behavior smaller, then rerun the exact failed command. |
 | Commit ancestry | `git rev-parse HEAD^1` after the final commit, compared with `START_SHA`. | Exit code `0`; the resolved parent equals the recorded start hash. | Stop, inspect history, squash any temporary red checkpoint into the final green slice, or reset/replay the slice so the final commit parent is `START_SHA`; rerun the ancestry check. |
 
 AI may summarize or recommend a recovery, but it must not proceed to the next phase while any gate above is failing.
@@ -248,11 +259,14 @@ Expected result:
 
 ## 7. Commit the final green state
 
-Before committing, verify the final state is fully green and the history is still anchored to the slice start.
+Before committing, verify the final state is fully green, all unit tests pass,
+and the history is still anchored to the slice start. Run every configured final
+validation command before `git commit`; with the default settings this includes
+`pnpm test`.
 
 ```bash
 git status --short
-<required wider checks>
+<required wider checks, including the all-unit-test command>
 git diff --check
 test "$(git merge-base HEAD "$START_SHA")" = "$START_SHA"
 ```
@@ -272,8 +286,10 @@ Use `fix:`, `test:`, or another conventional prefix when it better describes the
 
 Expected result:
 
-- The final commit contains the test, implementation, and refactor for one behavior slice.
-- The committed state is green.
+- The final commit contains the test, implementation, and refactor for one
+  behavior slice.
+- The committed state is green because every configured validation command,
+  including all unit tests, passed immediately before commit.
 - `HEAD^1` equals the recorded `START_SHA`, proving no extra commit was snuck in.
 - There are no leftover temporary red commits for the slice.
 

@@ -13,7 +13,10 @@ squash/commit or complete. Do not edit files and do not create commits.
 
 ## Checks
 
-- The focused test and required wider checks pass.
+- The focused test and all configured validation commands pass before the parent
+  creates the final commit.
+- The configured validation commands include the all unit tests command; if no
+  all-unit-test command is provided, block and ask the parent to identify one.
 - The final diff contains the verified red test and the production change for
   one behavior slice.
 - Test-only, production-only, and refactor boundaries were respected by phase.
@@ -26,7 +29,8 @@ squash/commit or complete. Do not edit files and do not create commits.
 
 1. Run or inspect `git status --short`, `git diff --stat`, `git diff --check`,
    and relevant commit-range commands.
-2. Run the focused command and required wider checks when provided.
+2. Run the focused command and every configured final validation command,
+   including all unit tests, before returning PASS.
 3. Inspect whether a temporary red checkpoint exists in history or parent notes.
 4. Verify the slice did not broaden beyond the selected behavior.
 5. Return a release/block decision with exact commands and evidence.

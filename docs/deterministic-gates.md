@@ -214,19 +214,26 @@ Recovery:
 
 ### Milestone checks gate
 
-Purpose: catch integration regressions without running expensive checks after every edit.
+Purpose: catch integration regressions without running expensive checks after
+every edit.
 
 Passes when:
 
-- configured milestone/full commands pass at planned milestones and final completion
+- configured milestone/full commands pass at planned milestones and final
+  completion
+- final completion includes every configured validation command, including the
+  all-unit-test command, before the final commit is created
 
 Fails when:
 
 - any milestone/full command fails
+- final completion skips the all-unit-test command or runs it only after commit
+  creation
 
 Recovery:
 
-- stop the milestone and route the failure to the appropriate slice or user review
+- stop the milestone and route the failure to the appropriate slice or user
+  review
 
 ### Final ancestry gate
 
@@ -237,6 +244,8 @@ Passes when:
 - final `HEAD^1` equals the recorded `START_SHA`
 - the final commit is conventional
 - the final commit diff includes the verified test and green implementation
+- pre-commit final verification evidence shows all configured validation
+  commands, including all unit tests, passed
 
 Fails when:
 

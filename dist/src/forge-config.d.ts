@@ -17,6 +17,10 @@ export declare const forgeSettingsSchema: z.ZodObject<{
         refactor: "refactor";
         finalVerify: "finalVerify";
     }>, z.ZodArray<z.ZodString>>>;
+    agentInstallTarget: z.ZodDefault<z.ZodEnum<{
+        project: "project";
+        global: "global";
+    }>>;
 }, z.core.$strip>;
 export declare const forgeSettingsFileSchema: z.ZodObject<{
     forge: z.ZodObject<{
@@ -32,6 +36,10 @@ export declare const forgeSettingsFileSchema: z.ZodObject<{
             refactor: "refactor";
             finalVerify: "finalVerify";
         }>, z.ZodArray<z.ZodString>>>;
+        agentInstallTarget: z.ZodDefault<z.ZodEnum<{
+            project: "project";
+            global: "global";
+        }>>;
     }, z.core.$strip>;
 }, z.core.$strip>;
 export declare const rawForgeSettingsSchema: z.ZodObject<{
@@ -49,6 +57,10 @@ export declare const rawForgeSettingsSchema: z.ZodObject<{
         refactor: "refactor";
         finalVerify: "finalVerify";
     }> & z.core.$partial, z.ZodArray<z.ZodString>>>>;
+    agentInstallTarget: z.ZodPreprocess<z.ZodOptional<z.ZodEnum<{
+        project: "project";
+        global: "global";
+    }>>>;
 }, z.core.$loose>;
 export type ForgeSettings = z.infer<typeof forgeSettingsSchema>;
 export type RawForgeSettings = z.infer<typeof rawForgeSettingsSchema>;

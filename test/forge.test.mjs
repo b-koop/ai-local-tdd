@@ -179,18 +179,21 @@ async function readVerifiedFeatureSpec(featureFileName) {
 	return scenarios.map((scenario) => scenario.name);
 }
 
-async function invokeForge(t, { cwd, trusted = true, input = "ABC-123" } = {}) {
+async function invokeForge(
+	t,
+	{ cwd, trusted = true, input = "ABC-123", commandName = "forge" } = {},
+) {
 	await withFakeTicketCommands(t, {
 		gh: { stdout: "{}" },
 		linear: { stdout: "Linear issue" },
 	});
-	let forgeHandler;
+	const commands = new Map();
 	const sentMessages = [];
 	const notifications = [];
 	const pi = {
 		on() {},
 		registerCommand(name, command) {
-			if (name === "forge") forgeHandler = command.handler;
+			commands.set(name, command);
 		},
 		sendUserMessage(message) {
 			sentMessages.push(message);
@@ -199,7 +202,10 @@ async function invokeForge(t, { cwd, trusted = true, input = "ABC-123" } = {}) {
 
 	registerForgeExtension(pi);
 
-	await forgeHandler(input, {
+	const command = commands.get(commandName);
+	assert.equal(typeof command?.handler, "function");
+
+	await command.handler(input, {
 		cwd: cwd ?? repoRoot,
 		isIdle: () => true,
 		isProjectTrusted: () => trusted,
@@ -213,6 +219,20 @@ async function invokeForge(t, { cwd, trusted = true, input = "ABC-123" } = {}) {
 
 	return { sentMessages, notifications };
 }
+
+test("/tdd is an alias for the forge command", async (t) => {
+	const { sentMessages, notifications } = await invokeForge(t, {
+		commandName: "tdd",
+		input: "ABC-456",
+	});
+
+	assert.equal(sentMessages.length, 1);
+	assert.match(sentMessages[0], /ABC-456/);
+	assert.deepEqual(notifications[0], {
+		message: "/forge resolving ABC-456",
+		level: "info",
+	});
+});
 
 test("/forge keeps the user's context after the ticket selector", async () => {
 	let forgeHandler;
@@ -321,6 +341,99 @@ test("/forge offers to copy bundled agents when proper locations are missing", a
 		"utf8",
 	);
 	assert.match(copiedRedAgent, /^name:\s*forge-red$/m);
+	assert.match(sentMessages[0], /Copied bundled agents this run: yes/);
+	assert.ok(
+		notifications.some(({ message }) => /Copied Forge agents/.test(message)),
+	);
+});
+
+test("/forge can install bundled agents into the global Pi agent directory", async (t) => {
+	const cwd = join(
+		tmpdir(),
+		`forge-global-agents-${Date.now()}-${Math.random()}`,
+	);
+	const globalDir = join(
+		tmpdir(),
+		`forge-global-settings-${Date.now()}-${Math.random()}`,
+	);
+	const userAgentsDir = join(
+		tmpdir(),
+		`forge-user-agents-${Date.now()}-${Math.random()}`,
+	);
+	await Promise.all([
+		mkdir(cwd, { recursive: true }),
+		mkdir(globalDir, { recursive: true }),
+		mkdir(userAgentsDir, { recursive: true }),
+	]);
+	const globalPath = join(globalDir, "settings.json");
+	await writeFile(
+		globalPath,
+		JSON.stringify({ forge: { agentInstallTarget: "global" } }),
+	);
+
+	const oldUserAgentsDir = process.env.PI_FORGE_USER_AGENTS_DIR;
+	const oldGlobalSettingsPath = process.env.PI_FORGE_GLOBAL_SETTINGS_PATH;
+	process.env.PI_FORGE_USER_AGENTS_DIR = userAgentsDir;
+	process.env.PI_FORGE_GLOBAL_SETTINGS_PATH = globalPath;
+	t.after(async () => {
+		if (oldUserAgentsDir === undefined)
+			delete process.env.PI_FORGE_USER_AGENTS_DIR;
+		else process.env.PI_FORGE_USER_AGENTS_DIR = oldUserAgentsDir;
+		if (oldGlobalSettingsPath === undefined)
+			delete process.env.PI_FORGE_GLOBAL_SETTINGS_PATH;
+		else process.env.PI_FORGE_GLOBAL_SETTINGS_PATH = oldGlobalSettingsPath;
+		await Promise.all([
+			rm(cwd, { recursive: true, force: true }),
+			rm(globalDir, { recursive: true, force: true }),
+			rm(userAgentsDir, { recursive: true, force: true }),
+		]);
+	});
+
+	let forgeHandler;
+	const sentMessages = [];
+	const confirmations = [];
+	const notifications = [];
+	const pi = {
+		on() {},
+		registerCommand(name, command) {
+			if (name === "forge") forgeHandler = command.handler;
+		},
+		sendUserMessage(message) {
+			sentMessages.push(message);
+		},
+	};
+
+	registerForgeExtension(pi);
+
+	await forgeHandler("", {
+		cwd,
+		isIdle: () => true,
+		isProjectTrusted: () => false,
+		ui: {
+			confirm(title, message) {
+				confirmations.push({ title, message });
+				return Promise.resolve(true);
+			},
+			notify(message, level) {
+				notifications.push({ message, level });
+			},
+			setStatus() {},
+		},
+	});
+
+	assert.equal(confirmations.length, 1);
+	assert.match(confirmations[0].message, /forge-red/);
+	assert.match(confirmations[0].message, /global Pi agent directory/);
+	assert.match(confirmations[0].message, new RegExp(userAgentsDir));
+	const copiedRedAgent = await readFile(
+		join(userAgentsDir, "forge-red.md"),
+		"utf8",
+	);
+	assert.match(copiedRedAgent, /^name:\s*forge-red$/m);
+	await assert.rejects(
+		readFile(join(cwd, ".pi", "agents", "forge-red.md"), "utf8"),
+		/error|ENOENT/,
+	);
 	assert.match(sentMessages[0], /Copied bundled agents this run: yes/);
 	assert.ok(
 		notifications.some(({ message }) => /Copied Forge agents/.test(message)),
@@ -460,9 +573,17 @@ test("/forge keeps ticket selection local when requested", async (t) => {
 	assert.equal(sentMessages.length, 1);
 	assert.match(sentMessages[0], /ABC-123/);
 	assert.match(sentMessages[0], /local:\s*true/);
+	assert.match(
+		sentMessages[0],
+		/fallbackSelectors:\s*\[\.\.\.DEFAULT_LOCAL_FALLBACK_SELECTORS\]/,
+	);
 	assert.match(sentMessages[0], /ollama\/\*/);
 	assert.match(sentMessages[0], /lmstudio\/\*/);
 	assert.match(sentMessages[0], /local\/\*/);
+	assert.match(
+		sentMessages[0],
+		/Try local selectors in order, starting with ollama\/ornith:35b/,
+	);
 });
 
 test("/forge warns about invalid testCommands and uses fallback commands", async (t) => {
@@ -908,7 +1029,10 @@ test("/forge routes phase agents through smart-model-run profiles", async (t) =>
 	const prompt = sentMessages[0];
 
 	assert.match(prompt, /# Smart model phase routing/);
-	assert.match(prompt, /import \{ smartRun \} from "smart-model-run"/);
+	assert.match(
+		prompt,
+		/import \{ DEFAULT_LOCAL_FALLBACK_SELECTORS, smartRun \} from "smart-model-run"/,
+	);
 	assert.match(prompt, /red → forge-red: budget=mid, ceiling=high/);
 	assert.match(prompt, /green → forge-green: budget=mid, ceiling=high/);
 	assert.match(

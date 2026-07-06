@@ -1,6 +1,6 @@
 # Pi Forge Command
 
-`pi-forge-command` is a local Pi package that adds `/forge`: a ticket-driven
+`the-forge` is a local Pi package that adds `/tdd`: a ticket-driven
 TDD orchestration command for running one behavior slice at a time with explicit
 git checks, phase-specific agents, and prompt-injection boundaries around ticket
 text.
@@ -19,7 +19,7 @@ loop contract.
 
 At a high level, a Forge run:
 
-1. parses `/forge [ticket|issue|pr|url] [extra context]`, preserving any user
+1. parses `/tdd [ticket|issue|pr|url] [extra context]`, preserving any user
    context after the selector;
 2. loads tolerant Forge settings from global and trusted project settings;
 3. checks whether the bundled phase agents are available, and can copy missing
@@ -69,7 +69,7 @@ extension entry declared in `package.json`:
 ### 4. Run Forge in a target repository
 
 ```text
-/forge ABC-123 preserve this extra implementation context
+/tdd ABC-123 preserve this extra implementation context
 ```
 
 If the session is idle, Forge sends the orchestration prompt immediately. If Pi
@@ -78,7 +78,24 @@ updates the Forge status line.
 
 ## Command behavior
 
-### `/forge [ticket|issue|pr|url]`
+### `--local` mode
+
+When the `--local` flag is passed, Forge restricts all model selection to local providers only and tries the ordered local fallback list from `ollama/ornith:35b` downward:
+
+- `ollama/*` (Ollama local models, starting with `ollama/ornith:35b`)
+- `lmstudio/*` (LM Studio local models)
+- `local/*` (other local provider adapters)
+
+This ensures no data leaves the local machine, useful for air-gapped environments or
+when working with sensitive proprietary code.
+
+Example:
+
+```text
+/tdd ABC-123 --local implement user authentication flow
+```
+
+### `/tdd [ticket|issue|pr|url]`
 
 Starts a ticket-driven TDD orchestration prompt. The first token is treated as
 the selector; remaining text is preserved as additional user context.
@@ -111,6 +128,20 @@ Trusted Forge instructions resume after the end marker above.
 
 ## How the Forge loop works
 
+```mermaid
+flowchart TD
+    A[Intake] --> B[Grill Requirements]
+    B --> C[Decompose]
+    C --> D[Red: Failing Test]
+    D --> E[Verify-Red]
+    E --> F[Green: Production Fix]
+    F --> G[Refactor]
+    G --> H[Final-Verify]
+    H --> I{All Slices Done?}
+    I -->|No| D
+    I -->|Yes| J[Cleanup & Commit]
+```
+
 The generated prompt requires the receiving agent to use the configured skills,
 phase agents, git checks, and validation commands. The core loop is:
 
@@ -135,6 +166,38 @@ loading, context lookup, phase-agent packaging, and behavior tests for those
 surfaces. The detailed executable gate model is documented as the intended v1
 safety contract in [`docs/deterministic-gates.md`](docs/deterministic-gates.md)
 and [`docs/design-decisions.md`](docs/design-decisions.md).
+
+## Smart model profiles
+
+Forge routes phase-agent dispatch through `smart-model-run` profiles instead of a single fixed model. Each phase gets optimized budget and capability settings:
+
+| Phase | Budget | Thinking Level | Tools Required |
+|-------|--------|---------------|----------------|
+| intake | cheap | low | correctness, tools |
+| decompose | cheap | low | correctness, tools |
+| red | mid | medium | reliable-tools, correctness |
+| verify-red | mid | medium | correctness, tools |
+| green | mid | medium | reliable-tools, correctness |
+| refactor | cheap | low | tools |
+| final-verify | cheap | low | tools |
+
+When `--local` is passed, these profiles call `smart-model-run` with `local: true` and the local fallback selectors, restrict to local providers (`ollama/*`, `lmstudio/*`, `local/*`), and try `ollama/ornith:35b` before moving down the local fallback list.
+
+### Phase agent tool access
+
+Each phase agent receives a specific tool subset to enforce safety boundaries:
+
+| Phase | Read-only tools | Editing tools |
+|-------|----------------|---------------|
+| intake | read, grep, find, ls, bash | read, grep, find, ls, bash |
+| decompose | read, grep, find, ls, bash | read, grep, find, ls, bash |
+| red | read, grep, find, ls, bash | read, grep, find, ls, bash, edit |
+| verify-red | read, grep, find, ls, bash | read, grep, find, ls, bash |
+| green | read, grep, find, ls, bash | read, grep, find, ls, bash, edit |
+| refactor | read, grep, find, ls, bash | read, grep, find, ls, bash, edit |
+| final-verify | read, grep, find, ls, bash | read, grep, find, ls, bash |
+
+---
 
 ## Phase agents
 
@@ -162,15 +225,17 @@ When `/forge` starts, it checks the normal Pi agent locations:
 - user-global `~/.pi/agent/agents/`.
 
 If any Forge phase agents are missing and the Pi UI supports confirmation, Forge
-asks whether to copy bundled defaults into `.pi/agents/`. If agents already
-exist, Forge only names them in the prompt so project or user customizations can
-be used.
+asks whether to copy bundled defaults into the configured install target. The
+default target is `.pi/agents/`; set `forge.agentInstallTarget` to `"global"`
+in global Pi settings to install into the user-global Pi agent directory. If
+agents already exist, Forge only names them in the prompt so project or user
+customizations can be used.
 
 Forge's orchestration prompt routes phase-agent dispatch through
 `smart-model-run` profiles instead of one fixed model. Red and green use higher
 correctness/tool-reliability profiles; read-only planning and verification use
 cheaper profiles unless selection needs to escalate. When the user passes
-`--local`, those profiles require `local: true` and local provider selectors.
+`--local`, those profiles pass `local: true` plus the local fallback selectors to `smart-model-run`, starting with `ollama/ornith:35b` before lower fallbacks.
 
 ## Settings
 
@@ -183,6 +248,13 @@ Forge reads an optional `forge` section from Pi settings.
   global settings path.
 - Test/debug override: `PI_FORGE_USER_AGENTS_DIR`, which replaces the user
   agent directory.
+
+### Environment Variables
+
+| Variable | Purpose | Default |
+|-----------|----------|----------|
+| `PI_FORGE_GLOBAL_SETTINGS_PATH` | Overrides the global settings file path | `~/.pi/agent/settings.json` |
+| `PI_FORGE_USER_AGENTS_DIR` | Overrides the user agents directory | `~/.pi/agent/agents/` |
 
 Supported settings are defined in [`src/forge-config.ts`](src/forge-config.ts)
 and the generated sample lives at
@@ -202,6 +274,9 @@ pnpm generate:forge-settings
 - `skills` defaults per Forge step. These skill names are required in the
   prompt for intake, decomposition, red, verify-red, green, refactor, and final
   verification.
+- `agentInstallTarget` defaults to `"project"`. Set it to `"global"` in global
+  Pi settings to copy accepted bundled phase-agent installs into the
+  user-global Pi agent directory instead of the current project's `.pi/agents`.
 
 Legacy aliases are accepted with warnings:
 

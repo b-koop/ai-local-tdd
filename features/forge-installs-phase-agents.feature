@@ -18,3 +18,9 @@ Feature: Forge makes phase agents available
     When Forge prepares the orchestration prompt
     Then the prompt names the agents that are now available for the run
     And the user is notified which agents were copied
+
+  Scenario: /forge can install bundled agents into the global Pi agent directory
+    Given global Forge settings choose the global agent install target
+    When the user accepts copying missing bundled phase agents
+    Then bundled phase agents are copied into the user-global Pi agent directory
+    And the project-local agent directory is left unchanged

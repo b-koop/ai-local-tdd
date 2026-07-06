@@ -490,6 +490,7 @@ function settingsSummary(settings: ForgeSettings): string {
 	return `Forge settings:
 - retries: ${settings.retries}
 - timeoutMs: ${settings.timeoutMs}
+- agentInstallTarget: ${settings.agentInstallTarget}
 - testCommands:
 ${formatTestCommands(settings)}
 - AI step skills:
@@ -499,10 +500,11 @@ ${Object.entries(settings.skills)
 }
 
 type ForgeAgentAvailability = {
-	found: string[];
-	missing: string[];
+	found: ForgeAgentName[];
+	missing: ForgeAgentName[];
 	properLocations: string[];
 	bundledLocation: string;
+	installDestination: string;
 	copiedToProject: boolean;
 };
 
@@ -541,7 +543,10 @@ function directoryHasAgentNamed(dir: string, agentName: string): boolean {
 	}
 }
 
-function getForgeAgentAvailability(cwd: string): ForgeAgentAvailability {
+function getForgeAgentAvailability(
+	cwd: string,
+	settings: ForgeSettings,
+): ForgeAgentAvailability {
 	const properLocations = forgeAgentSearchDirs(cwd);
 	const found = FORGE_AGENT_NAMES.filter((agentName) =>
 		properLocations.some((dir) => directoryHasAgentNamed(dir, agentName)),
@@ -553,16 +558,25 @@ function getForgeAgentAvailability(cwd: string): ForgeAgentAvailability {
 		),
 		properLocations,
 		bundledLocation: bundledForgeAgentsDir(),
+		installDestination: forgeAgentInstallDestination(cwd, settings),
 		copiedToProject: false,
 	};
 }
 
-function copyBundledForgeAgentsToProject(
+function forgeAgentInstallDestination(
 	cwd: string,
+	settings: ForgeSettings,
+): string {
+	return settings.agentInstallTarget === "global"
+		? userForgeAgentsDir()
+		: projectForgeAgentsDir(cwd);
+}
+
+function copyBundledForgeAgents(
+	destinationDir: string,
 	missing: readonly string[],
 ): string[] {
 	const sourceDir = bundledForgeAgentsDir();
-	const destinationDir = projectForgeAgentsDir(cwd);
 	mkdirSync(destinationDir, { recursive: true });
 	const copied: string[] = [];
 	for (const agentName of missing) {
@@ -579,8 +593,9 @@ function copyBundledForgeAgentsToProject(
 async function ensureForgeAgents(
 	cwd: string,
 	ctx: ExtensionCommandContext,
+	settings: ForgeSettings,
 ): Promise<ForgeAgentAvailability> {
-	let availability = getForgeAgentAvailability(cwd);
+	let availability = getForgeAgentAvailability(cwd, settings);
 	if (availability.missing.length === 0) return availability;
 
 	const confirm = (
@@ -590,14 +605,21 @@ async function ensureForgeAgents(
 	).confirm;
 	if (typeof confirm !== "function") return availability;
 
+	const destinationLabel =
+		settings.agentInstallTarget === "global"
+			? "global Pi agent directory"
+			: "project .pi/agents directory";
 	const shouldCopy = await confirm(
 		"Install Forge phase agents?",
-		`Forge could not find these agents in .pi/agents or ~/.pi/agent/agents: ${availability.missing.join(", ")}\n\nCopy bundled defaults from ${availability.bundledLocation} into ${projectForgeAgentsDir(cwd)} so they can be used and customized?`,
+		`Forge could not find these agents in .pi/agents or ~/.pi/agent/agents: ${availability.missing.join(", ")}\n\nCopy bundled defaults from ${availability.bundledLocation} into the ${destinationLabel} at ${availability.installDestination} so they can be used and customized?`,
 	);
 	if (!shouldCopy) return availability;
 
-	const copied = copyBundledForgeAgentsToProject(cwd, availability.missing);
-	availability = getForgeAgentAvailability(cwd);
+	const copied = copyBundledForgeAgents(
+		availability.installDestination,
+		availability.missing,
+	);
+	availability = getForgeAgentAvailability(cwd, settings);
 	availability.copiedToProject = copied.length > 0;
 	if (copied.length > 0) {
 		ctx.ui.notify(`Copied Forge agents: ${copied.join(", ")}`, "info");
@@ -665,7 +687,11 @@ function formatSmartModelProfiles(localOnly: boolean): string {
 				`- ${step} → ${profile.agent}: budget=${profile.budget}, ceiling=${profile.ceiling}, thinking=${profile.thinking}, needs=${profile.needs.join("+")}, tools=${profile.tools.join(", ")}`,
 		)
 		.join("\n");
-	const localOnlyOption = localOnly ? "\n  local: true," : "";
+	const localOptions = localOnly
+		? `
+  local: true,
+  fallbackSelectors: [...DEFAULT_LOCAL_FALLBACK_SELECTORS],`
+		: "";
 	const localFallbacks = localOnly
 		? `\n- Local fallback selectors: ${DEFAULT_LOCAL_FALLBACK_SELECTORS.join(", ")}`
 		: "";
@@ -676,13 +702,13 @@ ${profiles}${localFallbacks}
 
 Dispatch shape for each phase:
 \`\`\`ts
-import { smartRun } from "smart-model-run";
+import { DEFAULT_LOCAL_FALLBACK_SELECTORS, smartRun } from "smart-model-run";
 
 const result = await smartRun({
   cwd: process.cwd(),
   prompt: phasePrompt,
   runner: runPiSubagent,
-  modelRegistry,${localOnlyOption}
+  modelRegistry,${localOptions}
   budget: profile.budget,
   ceiling: profile.ceiling,
   thinking: profile.thinking,
@@ -696,7 +722,7 @@ If smart-model-run cannot find or run a model for a phase, block that phase and 
 function localOnlyModelGuidance(localOnly: boolean): string {
 	if (!localOnly) return "";
 	return `# Local-only model mode
-The user included \`--local\`, so keep all model-assisted phase dispatch on local providers only. When dispatching subagents through smart-model-run, pass \`local: true\` and allow only local provider selectors: \`ollama/*\`, \`lmstudio/*\`, or \`local/*\`.`;
+The user included \`--local\`, so keep all model-assisted phase dispatch on local providers only. When dispatching subagents through smart-model-run, pass \`local: true\` plus \`fallbackSelectors: [...DEFAULT_LOCAL_FALLBACK_SELECTORS]\`, and allow only local provider selectors: \`ollama/*\`, \`lmstudio/*\`, or \`local/*\`. Try local selectors in order, starting with ollama/ornith:35b, then move down the listed fallback selectors.`;
 }
 
 function agentContracts(): string {
@@ -806,7 +832,7 @@ export default function (pi: ExtensionAPI) {
 		publishStatus(ctx);
 	});
 
-	pi.registerCommand("forge", {
+	const forgeCommand = {
 		description:
 			"Orchestrate ticket-driven TDD with red, green, verify, cleanup agents and mandatory git checks.",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
@@ -845,7 +871,7 @@ export default function (pi: ExtensionAPI) {
 			const [gitContext, lookups, agentAvailability] = await Promise.all([
 				collectGitContext(ctx.cwd, settings),
 				collectTicketLookups(parsed.selector, ctx.cwd, settings),
-				ensureForgeAgents(ctx.cwd, ctx),
+				ensureForgeAgents(ctx.cwd, ctx, settings),
 			]);
 			const prompt = buildForgePrompt(
 				parsed,
@@ -871,5 +897,8 @@ export default function (pi: ExtensionAPI) {
 
 			pi.sendUserMessage(prompt);
 		},
-	});
+	};
+
+	pi.registerCommand("forge", forgeCommand);
+	pi.registerCommand("tdd", forgeCommand);
 }

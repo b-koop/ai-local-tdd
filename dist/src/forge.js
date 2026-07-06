@@ -285,6 +285,7 @@ function settingsSummary(settings) {
     return `Forge settings:
 - retries: ${settings.retries}
 - timeoutMs: ${settings.timeoutMs}
+- agentInstallTarget: ${settings.agentInstallTarget}
 - testCommands:
 ${formatTestCommands(settings)}
 - AI step skills:
@@ -326,7 +327,7 @@ function directoryHasAgentNamed(dir, agentName) {
         return false;
     }
 }
-function getForgeAgentAvailability(cwd) {
+function getForgeAgentAvailability(cwd, settings) {
     const properLocations = forgeAgentSearchDirs(cwd);
     const found = FORGE_AGENT_NAMES.filter((agentName) => properLocations.some((dir) => directoryHasAgentNamed(dir, agentName)));
     return {
@@ -334,12 +335,17 @@ function getForgeAgentAvailability(cwd) {
         missing: FORGE_AGENT_NAMES.filter((agentName) => !found.includes(agentName)),
         properLocations,
         bundledLocation: bundledForgeAgentsDir(),
+        installDestination: forgeAgentInstallDestination(cwd, settings),
         copiedToProject: false,
     };
 }
-function copyBundledForgeAgentsToProject(cwd, missing) {
+function forgeAgentInstallDestination(cwd, settings) {
+    return settings.agentInstallTarget === "global"
+        ? userForgeAgentsDir()
+        : projectForgeAgentsDir(cwd);
+}
+function copyBundledForgeAgents(destinationDir, missing) {
     const sourceDir = bundledForgeAgentsDir();
-    const destinationDir = projectForgeAgentsDir(cwd);
     mkdirSync(destinationDir, { recursive: true });
     const copied = [];
     for (const agentName of missing) {
@@ -353,18 +359,21 @@ function copyBundledForgeAgentsToProject(cwd, missing) {
     }
     return copied;
 }
-async function ensureForgeAgents(cwd, ctx) {
-    let availability = getForgeAgentAvailability(cwd);
+async function ensureForgeAgents(cwd, ctx, settings) {
+    let availability = getForgeAgentAvailability(cwd, settings);
     if (availability.missing.length === 0)
         return availability;
     const confirm = ctx.ui.confirm;
     if (typeof confirm !== "function")
         return availability;
-    const shouldCopy = await confirm("Install Forge phase agents?", `Forge could not find these agents in .pi/agents or ~/.pi/agent/agents: ${availability.missing.join(", ")}\n\nCopy bundled defaults from ${availability.bundledLocation} into ${projectForgeAgentsDir(cwd)} so they can be used and customized?`);
+    const destinationLabel = settings.agentInstallTarget === "global"
+        ? "global Pi agent directory"
+        : "project .pi/agents directory";
+    const shouldCopy = await confirm("Install Forge phase agents?", `Forge could not find these agents in .pi/agents or ~/.pi/agent/agents: ${availability.missing.join(", ")}\n\nCopy bundled defaults from ${availability.bundledLocation} into the ${destinationLabel} at ${availability.installDestination} so they can be used and customized?`);
     if (!shouldCopy)
         return availability;
-    const copied = copyBundledForgeAgentsToProject(cwd, availability.missing);
-    availability = getForgeAgentAvailability(cwd);
+    const copied = copyBundledForgeAgents(availability.installDestination, availability.missing);
+    availability = getForgeAgentAvailability(cwd, settings);
     availability.copiedToProject = copied.length > 0;
     if (copied.length > 0) {
         ctx.ui.notify(`Copied Forge agents: ${copied.join(", ")}`, "info");
@@ -420,7 +429,11 @@ function formatSmartModelProfiles(localOnly) {
     const profiles = Object.entries(FORGE_SMART_MODEL_PROFILES)
         .map(([step, profile]) => `- ${step} → ${profile.agent}: budget=${profile.budget}, ceiling=${profile.ceiling}, thinking=${profile.thinking}, needs=${profile.needs.join("+")}, tools=${profile.tools.join(", ")}`)
         .join("\n");
-    const localOnlyOption = localOnly ? "\n  local: true," : "";
+    const localOptions = localOnly
+        ? `
+  local: true,
+  fallbackSelectors: [...DEFAULT_LOCAL_FALLBACK_SELECTORS],`
+        : "";
     const localFallbacks = localOnly
         ? `\n- Local fallback selectors: ${DEFAULT_LOCAL_FALLBACK_SELECTORS.join(", ")}`
         : "";
@@ -431,13 +444,13 @@ ${profiles}${localFallbacks}
 
 Dispatch shape for each phase:
 \`\`\`ts
-import { smartRun } from "smart-model-run";
+import { DEFAULT_LOCAL_FALLBACK_SELECTORS, smartRun } from "smart-model-run";
 
 const result = await smartRun({
   cwd: process.cwd(),
   prompt: phasePrompt,
   runner: runPiSubagent,
-  modelRegistry,${localOnlyOption}
+  modelRegistry,${localOptions}
   budget: profile.budget,
   ceiling: profile.ceiling,
   thinking: profile.thinking,
@@ -451,7 +464,7 @@ function localOnlyModelGuidance(localOnly) {
     if (!localOnly)
         return "";
     return `# Local-only model mode
-The user included \`--local\`, so keep all model-assisted phase dispatch on local providers only. When dispatching subagents through smart-model-run, pass \`local: true\` and allow only local provider selectors: \`ollama/*\`, \`lmstudio/*\`, or \`local/*\`.`;
+The user included \`--local\`, so keep all model-assisted phase dispatch on local providers only. When dispatching subagents through smart-model-run, pass \`local: true\` plus \`fallbackSelectors: [...DEFAULT_LOCAL_FALLBACK_SELECTORS]\`, and allow only local provider selectors: \`ollama/*\`, \`lmstudio/*\`, or \`local/*\`. Try local selectors in order, starting with ollama/ornith:35b, then move down the listed fallback selectors.`;
 }
 function agentContracts() {
     return `Focused subagent contracts:
@@ -547,7 +560,7 @@ export default function (pi) {
         }
         publishStatus(ctx);
     });
-    pi.registerCommand("forge", {
+    const forgeCommand = {
         description: "Orchestrate ticket-driven TDD with red, green, verify, cleanup agents and mandatory git checks.",
         handler: async (args, ctx) => {
             const parsed = parseArgs(args);
@@ -574,7 +587,7 @@ export default function (pi) {
             const [gitContext, lookups, agentAvailability] = await Promise.all([
                 collectGitContext(ctx.cwd, settings),
                 collectTicketLookups(parsed.selector, ctx.cwd, settings),
-                ensureForgeAgents(ctx.cwd, ctx),
+                ensureForgeAgents(ctx.cwd, ctx, settings),
             ]);
             const prompt = buildForgePrompt(parsed, gitContext, lookups, settings, agentAvailability, settingsResult.warnings);
             const queued = !ctx.isIdle();
@@ -591,6 +604,8 @@ export default function (pi) {
             }
             pi.sendUserMessage(prompt);
         },
-    });
+    };
+    pi.registerCommand("forge", forgeCommand);
+    pi.registerCommand("tdd", forgeCommand);
 }
 //# sourceMappingURL=forge.js.map

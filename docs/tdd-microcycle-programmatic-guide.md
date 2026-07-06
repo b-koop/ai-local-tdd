@@ -20,7 +20,9 @@ Drive one behavior slice from the next smallest test through red, green, refacto
   list before the final green commit. Keep an all-unit-test command in this
   list; the default is `pnpm test`. The legacy `testCommand` string is still
   accepted and normalized to `testCommands: [testCommand]`, but new settings
-  should use `testCommands`:
+  should use `testCommands`. `agentInstallTarget` controls where accepted
+  bundled phase-agent installs are copied: `project` writes `.pi/agents`, while
+  `global` writes the user-global Pi agent directory:
 
 ```json
 {
@@ -36,7 +38,8 @@ Drive one behavior slice from the next smallest test through red, green, refacto
       "green": ["tdd", "naming"],
       "refactor": ["tdd", "naming", "thermo-nuclear-code-quality-review"],
       "finalVerify": ["tdd", "vette", "thermo-nuclear-code-quality-review", "pr-validate"]
-    }
+    },
+    "agentInstallTarget": "project"
   }
 }
 ```
@@ -50,6 +53,9 @@ Drive one behavior slice from the next smallest test through red, green, refacto
 - Select the model for each phase through `smart-model-run` using the profile in
   the `/forge` prompt. Red and green should favor correctness and reliable tool
   use; read-only phases should stay cheaper unless `smart-model-run` escalates.
+  In `--local` mode, call `smart-model-run` with `local: true` and the local
+  fallback selectors, trying `ollama/ornith:35b` first before moving down the
+  list.
 
 ## Programmatic loop
 

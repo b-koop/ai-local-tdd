@@ -42,6 +42,7 @@
         "thermo-nuclear-code-quality-review",
         "pr-validate"
       ]
-    }
+    },
+    "agentInstallTarget": "project"
   }
 }

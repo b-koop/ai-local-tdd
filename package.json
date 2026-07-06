@@ -1,7 +1,7 @@
 {
-  "name": "pi-forge-command",
-  "version": "0.1.0",
-  "description": "Pi package that adds the /forge ticket-driven TDD orchestration command.",
+  "name": "@ai-local/tdd",
+  "version": "0.2.0",
+  "description": "Pi package that adds the /tdd ticket-driven TDD orchestration command.",
   "type": "module",
   "keywords": [
     "pi-package",
@@ -12,7 +12,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/b-koop/the-forge.git"
+    "url": "git+https://github.com/nivoset/the-forge.git"
   },
   "bugs": {
     "url": "https://github.com/b-koop/the-forge/issues"

@@ -415,6 +415,19 @@ test("/rolling starts Rolling Forge with fresh per-item agent instances", async 
 		prompt,
 		/Reassess current code reality after each completed item/,
 	);
+	assert.match(
+		prompt,
+		/Dispatch a fresh subagent to inspect current code reality and choose the next smallest item/,
+	);
+	assert.match(prompt, /Run the selected item through the `\/tdd` command/);
+	assert.match(
+		prompt,
+		/Wait for the subagent to report an all-clear before selecting another item/,
+	);
+	assert.match(
+		prompt,
+		/Verify the completed item is integrated and working before continuing the loop/,
+	);
 	assert.deepEqual(notifications[0], {
 		message: "/rolling resolving ABC-789",
 		level: "info",

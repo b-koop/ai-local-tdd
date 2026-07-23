@@ -438,6 +438,10 @@ function rollingForgeContract() {
 - Use this when the requested outcome is larger than one safely knowable TDD slice.
 - Do not fully decompose the entire ticket up front. Record future work as candidates, deferred items, or blocked items until current code reality makes the next step clear.
 - Choose only the next definitely useful, validated behavior item for deep planning.
+- Dispatch a fresh subagent to inspect current code reality and choose the next smallest item before each loop iteration.
+- Run the selected item through the \`/tdd\` command rather than bypassing the ticket-driven TDD workflow.
+- Wait for the subagent to report an all-clear before selecting another item.
+- Verify the completed item is integrated and working before continuing the loop.
 - Each ready backlog item must run in a fresh agent context. Do not inherit the full prior conversation, stale worker reasoning, or unrelated previous ticket context.
 - Only carry forward curated summaries and slice packets: behavior, why-now, dependency facts, relevant files, allowed file areas, focused command, expected red reason, validation evidence, final commit, and new durable facts.
 - Reassess current code reality after each completed item before promoting the next candidate to ready.

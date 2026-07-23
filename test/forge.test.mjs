@@ -179,9 +179,59 @@ async function readVerifiedFeatureSpec(featureFileName) {
 	return scenarios.map((scenario) => scenario.name);
 }
 
+async function readFeatureScenarioTags() {
+	const featuresDir = join(repoRoot, "features");
+	const tags = [];
+	for (const fileName of await readdir(featuresDir)) {
+		if (!fileName.endsWith(".feature")) continue;
+		const feature = await readFile(join(featuresDir, fileName), "utf8");
+		let pendingTags = [];
+		for (const line of feature.split("\n")) {
+			const trimmed = line.trim();
+			if (trimmed.startsWith("@")) {
+				pendingTags = trimmed.split(/\s+/);
+				continue;
+			}
+			if (/^Scenario(?: Outline)?:/.test(trimmed)) {
+				const scenarioTag = pendingTags.find((tag) =>
+					tag.startsWith("@scenario-"),
+				);
+				assert.ok(
+					scenarioTag,
+					`${fileName} ${trimmed} must have a stable @scenario tag`,
+				);
+				tags.push(scenarioTag);
+				pendingTags = [];
+				continue;
+			}
+			if (trimmed && !trimmed.startsWith("#")) pendingTags = [];
+		}
+	}
+	return tags.sort();
+}
+
+async function readCoveredScenarioTags() {
+	const testDir = join(repoRoot, "test");
+	const tags = [];
+	for (const fileName of await readdir(testDir)) {
+		if (!fileName.endsWith(".mjs")) continue;
+		const source = await readFile(join(testDir, fileName), "utf8");
+		for (const match of source.matchAll(/@covers\s+(@scenario-[\w-]+)/g)) {
+			tags.push(match[1]);
+		}
+	}
+	return tags.sort();
+}
+
 async function invokeForge(
 	t,
-	{ cwd, trusted = true, input = "ABC-123", commandName = "forge" } = {},
+	{
+		cwd,
+		trusted = true,
+		input = "ABC-123",
+		commandName = "forge",
+		idle = true,
+	} = {},
 ) {
 	await withFakeTicketCommands(t, {
 		gh: { stdout: "{}" },
@@ -190,13 +240,14 @@ async function invokeForge(
 	const commands = new Map();
 	const sentMessages = [];
 	const notifications = [];
+	const statuses = [];
 	const pi = {
 		on() {},
 		registerCommand(name, command) {
 			commands.set(name, command);
 		},
-		sendUserMessage(message) {
-			sentMessages.push(message);
+		sendUserMessage(message, options) {
+			sentMessages.push({ message, options });
 		},
 	};
 
@@ -207,17 +258,24 @@ async function invokeForge(
 
 	await command.handler(input, {
 		cwd: cwd ?? repoRoot,
-		isIdle: () => true,
+		isIdle: () => idle,
 		isProjectTrusted: () => trusted,
 		ui: {
 			notify(message, level) {
 				notifications.push({ message, level });
 			},
-			setStatus() {},
+			setStatus(name, message) {
+				statuses.push({ name, message });
+			},
 		},
 	});
 
-	return { sentMessages, notifications };
+	return {
+		sentMessages: sentMessages.map(({ message }) => message),
+		sentMessageOptions: sentMessages.map(({ options }) => options),
+		notifications,
+		statuses,
+	};
 }
 
 test("/tdd is an alias for the forge command", async (t) => {
@@ -232,6 +290,104 @@ test("/tdd is an alias for the forge command", async (t) => {
 		message: "/forge resolving ABC-456",
 		level: "info",
 	});
+});
+
+// @covers @scenario-forge-includes-current-repository-context-in-the-orchestration-prompt
+// @covers @scenario-forge-looks-up-an-explicit-ticket-selector-across-supported-trackers
+test("/forge includes repository context and explicit ticket lookup evidence", async (t) => {
+	const { sentMessages } = await invokeForge(t, { input: "ABC-123" });
+
+	assert.equal(sentMessages.length, 1);
+	assert.match(sentMessages[0], /# Initial git context from extension/);
+	assert.match(sentMessages[0], /Current branch:/);
+	assert.match(sentMessages[0], /Head commit:/);
+	assert.match(sentMessages[0], /## Linear issue/);
+	assert.match(sentMessages[0], /## GitHub issue/);
+});
+
+// @covers @scenario-forge-marks-unavailable-repository-context-without-crashing
+test("/forge marks unavailable repository context without crashing", async (t) => {
+	const cwd = join(tmpdir(), `forge-no-git-${Date.now()}-${Math.random()}`);
+	await mkdir(cwd, { recursive: true });
+	t.after(async () => {
+		await rm(cwd, { recursive: true, force: true });
+	});
+
+	const { sentMessages } = await invokeForge(t, { cwd, input: "ABC-123" });
+
+	assert.equal(sentMessages.length, 1);
+	assert.match(sentMessages[0], /Current branch: <unavailable>/);
+	assert.match(sentMessages[0], /Head commit: <unavailable>/);
+});
+
+// @covers @scenario-forge-falls-back-to-current-branch-ticket-evidence-when-no-selector-is-provided
+// @covers @scenario-forge-preserves-lookup-failures-as-evidence-instead-of-aborting
+test("/forge falls back to current branch evidence and preserves lookup failures", async (t) => {
+	await withFakeTicketCommands(t, {
+		gh: { stderr: "no pull requests found", exitCode: 1 },
+		linear: { stderr: "Could not determine issue ID", exitCode: 1 },
+	});
+	const commands = new Map();
+	const sentMessages = [];
+	const pi = {
+		on() {},
+		registerCommand(name, command) {
+			commands.set(name, command);
+		},
+		sendUserMessage(message) {
+			sentMessages.push(message);
+		},
+	};
+	registerForgeExtension(pi);
+
+	await commands.get("forge").handler("", {
+		cwd: repoRoot,
+		isIdle: () => true,
+		isProjectTrusted: () => false,
+		ui: { notify() {}, setStatus() {} },
+	});
+
+	assert.equal(sentMessages.length, 1);
+	assert.match(sentMessages[0], /Run Forge for: current branch/);
+	assert.match(sentMessages[0], /Linear branch issue id \(error\)/);
+	assert.match(sentMessages[0], /GitHub current-branch PR \(error\)/);
+});
+
+// @covers @scenario-forge-sends-the-orchestration-prompt-immediately-in-an-idle-session
+// @covers @scenario-forge-queues-orchestration-as-a-follow-up-in-a-busy-session
+// @covers @scenario-forge-status-returns-to-idle-after-agent-completion
+test("/forge dispatches immediately or queues with visible status", async (t) => {
+	const immediate = await invokeForge(t, { input: "ABC-123", idle: true });
+	assert.equal(immediate.sentMessages.length, 1);
+	assert.equal(immediate.sentMessageOptions[0], undefined);
+	assert.deepEqual(immediate.statuses.at(-1), {
+		name: "forge",
+		message: "/forge working (intake) ABC-123",
+	});
+
+	const queued = await invokeForge(t, { input: "ABC-123", idle: false });
+	assert.equal(queued.sentMessages.length, 1);
+	assert.deepEqual(queued.sentMessageOptions[0], { deliverAs: "followUp" });
+	assert.deepEqual(queued.statuses.at(-1), {
+		name: "forge",
+		message: "/forge queued (intake) ABC-123",
+	});
+	assert.deepEqual(queued.notifications.at(-1), {
+		message: "/forge queued as follow-up",
+		level: "info",
+	});
+});
+
+test("every feature scenario has executable test coverage metadata", async () => {
+	const scenarioTags = await readFeatureScenarioTags();
+	const coveredTags = new Set(await readCoveredScenarioTags());
+	const uncoveredTags = scenarioTags.filter((tag) => !coveredTags.has(tag));
+
+	assert.equal(
+		uncoveredTags.length,
+		0,
+		`uncovered scenario tags: ${uncoveredTags.join(", ")}`,
+	);
 });
 
 // @covers @scenario-rolling-starts-just-in-time-tdd-planning

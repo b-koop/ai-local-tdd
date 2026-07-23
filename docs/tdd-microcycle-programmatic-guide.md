@@ -20,9 +20,7 @@ Drive one behavior slice from the next smallest test through red, green, refacto
   list before the final green commit. Keep an all-unit-test command in this
   list; the default is `pnpm test`. The legacy `testCommand` string is still
   accepted and normalized to `testCommands: [testCommand]`, but new settings
-  should use `testCommands`. `agentInstallTarget` controls where accepted
-  bundled phase-agent installs are copied: `project` writes `.pi/agents`, while
-  `global` writes the user-global Pi agent directory:
+  should use `testCommands`:
 
 ```json
 {
@@ -38,8 +36,7 @@ Drive one behavior slice from the next smallest test through red, green, refacto
       "green": ["tdd", "naming"],
       "refactor": ["tdd", "naming", "thermo-nuclear-code-quality-review"],
       "finalVerify": ["tdd", "vette", "thermo-nuclear-code-quality-review", "pr-validate"]
-    },
-    "agentInstallTarget": "project"
+    }
   }
 }
 ```
@@ -48,8 +45,8 @@ Drive one behavior slice from the next smallest test through red, green, refacto
 - When Pi agents are available, use these concrete phase agents:
   `forge-intake`, `forge-decompose`, `forge-red`, `forge-verify-red`,
   `forge-green`, `forge-refactor`, and `forge-final-verify`. Bundled defaults
-  live in `agents/`; copy them to `.pi/agents/` when project customization is
-  needed.
+  live in `agents/`; add a same-named file under `.pi/agents/` or the
+  user-global agent directory only when an override is needed.
 - Select the model for each phase through `smart-model-run` using the profile in
   the `/forge` prompt. Red and green should favor correctness and reliable tool
   use; read-only phases should stay cheaper unless `smart-model-run` escalates.

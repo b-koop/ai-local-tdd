@@ -3,6 +3,7 @@ Feature: Forge blocks unsafe ticket selectors
   Ticket selectors are passed to external lookup tools. Forge must reject
   selector-shaped command flags before they can be treated as tool options.
 
+  @scenario-forge-rejects-a-dash-prefixed-selector-before-ticket-lookup
   Scenario: /forge rejects a dash-prefixed selector before ticket lookup
     Given a user invokes /forge with a selector that starts with a dash
     When Forge validates the selector

@@ -4,6 +4,7 @@ Feature: Forge labels ticket lookup text as untrusted
   attempts. Forge must mark that text as untrusted data before any agent
   reads it.
 
+  @scenario-forge-labels-ticket-lookup-text-as-untrusted-before-agents-read-it
   Scenario: /forge labels ticket lookup text as untrusted before agents read it
     Given a ticket whose body contains instructions aimed at the agent
     When /forge fetches the ticket text from external lookup commands

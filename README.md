@@ -3,7 +3,8 @@
 `the-forge` is a local Pi package that adds `/tdd`: a ticket-driven
 TDD orchestration command for running one behavior slice at a time with explicit
 git checks, phase-specific agents, and prompt-injection boundaries around ticket
-text.
+text. It also adds `/rolling` for larger work that should be narrowed just in
+time with a fresh agent context for each ready item.
 
 This README is the Diataxis-style orientation document for the project: it
 explains the mental model, the current package behavior, and where to find the
@@ -22,8 +23,8 @@ At a high level, a Forge run:
 1. parses `/tdd [ticket|issue|pr|url] [extra context]`, preserving any user
    context after the selector;
 2. loads tolerant Forge settings from global and trusted project settings;
-3. checks whether the bundled phase agents are available, and can copy missing
-   defaults into `.pi/agents/` with user confirmation;
+3. resolves phase agents from project/user overrides first, otherwise using the
+   bundled local defaults without an install prompt;
 4. gathers git context and available Linear/GitHub ticket evidence;
 5. wraps external ticket text in an explicit untrusted-data boundary;
 6. sends or queues a prompt that requires ticket-driven red/green/refactor work,
@@ -126,6 +127,33 @@ instructions. The generated prompt labels lookup output as untrusted data:
 Trusted Forge instructions resume after the end marker above.
 ```
 
+### `/specmap [feature-path]`
+
+Runs the traceability preflight before Rolling Forge. When no path is provided,
+`/specmap` defaults to `features`, scans Gherkin scenarios, ensures stable
+Rule/Scenario tags, finds matching executable tests, and adds only
+high-confidence coverage tags. It prefers the lowest useful test level: unit
+when possible, integration when behavior crosses module boundaries, and e2e only
+when lower-level tests cannot prove the behavior.
+
+Uncovered or ambiguous scenarios become candidate items for `/rolling` instead
+of silently creating false coverage links.
+
+### `/rolling [ticket|issue|pr|url]`
+
+Starts Rolling Forge, a just-in-time variant for larger work where the future
+shape may change after each completed slice. `/rolling` shares Forge lookup,
+settings, agent availability, git context, model guidance, and deterministic
+safety rules with `/tdd`, but changes the planning contract:
+
+- do not fully decompose the entire ticket up front;
+- deeply plan only the next definitely useful, validated behavior item;
+- run each ready item with a fresh agent context;
+- carry forward only curated summaries and compact item packets;
+- reassess the current code reality before promoting the next item.
+
+See [`docs/rolling-forge.md`](docs/rolling-forge.md) for the planning contract.
+
 ## How the Forge loop works
 
 ```mermaid
@@ -219,17 +247,14 @@ copied into a target repository's `.pi/agents/` directory for customization.
 - `forge-final-verify`: runs final checks and confirms git, file, and commit
   boundaries. It is read-only.
 
-When `/forge` starts, it checks the normal Pi agent locations:
+When `/forge` starts, it checks override locations first:
 
 - project-local `.pi/agents/`;
 - user-global `~/.pi/agent/agents/`.
 
-If any Forge phase agents are missing and the Pi UI supports confirmation, Forge
-asks whether to copy bundled defaults into the configured install target. The
-default target is `.pi/agents/`; set `forge.agentInstallTarget` to `"global"`
-in global Pi settings to install into the user-global Pi agent directory. If
-agents already exist, Forge only names them in the prompt so project or user
-customizations can be used.
+If an override exists for a Forge phase agent, the prompt reports that override.
+Otherwise Forge uses the bundled local default from `agents/` directly and does
+not ask to install or copy agent files.
 
 Forge's orchestration prompt routes phase-agent dispatch through
 `smart-model-run` profiles instead of one fixed model. Red and green use higher
@@ -274,10 +299,6 @@ pnpm generate:forge-settings
 - `skills` defaults per Forge step. These skill names are required in the
   prompt for intake, decomposition, red, verify-red, green, refactor, and final
   verification.
-- `agentInstallTarget` defaults to `"project"`. Set it to `"global"` in global
-  Pi settings to copy accepted bundled phase-agent installs into the
-  user-global Pi agent directory instead of the current project's `.pi/agents`.
-
 Legacy aliases are accepted with warnings:
 
 - `timeout` is treated as `timeoutMs`;
@@ -337,7 +358,8 @@ functions. Existing feature coverage includes:
   idle sessions receive the prompt immediately; busy sessions queue follow-up
   work.
 - [`features/forge-installs-phase-agents.feature`](features/forge-installs-phase-agents.feature):
-  missing bundled phase agents can be copied into `.pi/agents/`.
+  bundled local phase agents are used by default unless project or user
+  overrides exist.
 - [`features/forge-loads-settings-overrides.feature`](features/forge-loads-settings-overrides.feature):
   global and trusted project settings are loaded, adapted, or warned safely.
 - [`features/forge-captures-git-context.feature`](features/forge-captures-git-context.feature):

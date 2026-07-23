@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -285,7 +285,6 @@ function settingsSummary(settings) {
     return `Forge settings:
 - retries: ${settings.retries}
 - timeoutMs: ${settings.timeoutMs}
-- agentInstallTarget: ${settings.agentInstallTarget}
 - testCommands:
 ${formatTestCommands(settings)}
 - AI step skills:
@@ -302,7 +301,7 @@ function projectForgeAgentsDir(cwd) {
 function userForgeAgentsDir() {
     return process.env.PI_FORGE_USER_AGENTS_DIR ?? join(getAgentDir(), "agents");
 }
-function forgeAgentSearchDirs(cwd) {
+function forgeAgentOverrideDirs(cwd) {
     return [projectForgeAgentsDir(cwd), userForgeAgentsDir()];
 }
 function directoryHasAgentNamed(dir, agentName) {
@@ -327,66 +326,36 @@ function directoryHasAgentNamed(dir, agentName) {
         return false;
     }
 }
-function getForgeAgentAvailability(cwd, settings) {
-    const properLocations = forgeAgentSearchDirs(cwd);
-    const found = FORGE_AGENT_NAMES.filter((agentName) => properLocations.some((dir) => directoryHasAgentNamed(dir, agentName)));
+function getForgeAgentAvailability(cwd) {
+    const overrideLocations = forgeAgentOverrideDirs(cwd);
+    const bundledLocation = bundledForgeAgentsDir();
+    const overridden = FORGE_AGENT_NAMES.filter((agentName) => overrideLocations.some((dir) => directoryHasAgentNamed(dir, agentName)));
+    const bundled = FORGE_AGENT_NAMES.filter((agentName) => !overridden.includes(agentName) &&
+        directoryHasAgentNamed(bundledLocation, agentName));
+    const found = FORGE_AGENT_NAMES.filter((agentName) => overridden.includes(agentName) || bundled.includes(agentName));
     return {
         found,
+        overridden,
+        bundled,
         missing: FORGE_AGENT_NAMES.filter((agentName) => !found.includes(agentName)),
-        properLocations,
-        bundledLocation: bundledForgeAgentsDir(),
-        installDestination: forgeAgentInstallDestination(cwd, settings),
+        overrideLocations,
+        bundledLocation,
         copiedToProject: false,
     };
 }
-function forgeAgentInstallDestination(cwd, settings) {
-    return settings.agentInstallTarget === "global"
-        ? userForgeAgentsDir()
-        : projectForgeAgentsDir(cwd);
-}
-function copyBundledForgeAgents(destinationDir, missing) {
-    const sourceDir = bundledForgeAgentsDir();
-    mkdirSync(destinationDir, { recursive: true });
-    const copied = [];
-    for (const agentName of missing) {
-        const fileName = `${agentName}.md`;
-        const source = join(sourceDir, fileName);
-        const destination = join(destinationDir, fileName);
-        if (!existsSync(source) || existsSync(destination))
-            continue;
-        copyFileSync(source, destination);
-        copied.push(agentName);
-    }
-    return copied;
-}
-async function ensureForgeAgents(cwd, ctx, settings) {
-    let availability = getForgeAgentAvailability(cwd, settings);
-    if (availability.missing.length === 0)
-        return availability;
-    const confirm = ctx.ui.confirm;
-    if (typeof confirm !== "function")
-        return availability;
-    const destinationLabel = settings.agentInstallTarget === "global"
-        ? "global Pi agent directory"
-        : "project .pi/agents directory";
-    const shouldCopy = await confirm("Install Forge phase agents?", `Forge could not find these agents in .pi/agents or ~/.pi/agent/agents: ${availability.missing.join(", ")}\n\nCopy bundled defaults from ${availability.bundledLocation} into the ${destinationLabel} at ${availability.installDestination} so they can be used and customized?`);
-    if (!shouldCopy)
-        return availability;
-    const copied = copyBundledForgeAgents(availability.installDestination, availability.missing);
-    availability = getForgeAgentAvailability(cwd, settings);
-    availability.copiedToProject = copied.length > 0;
-    if (copied.length > 0) {
-        ctx.ui.notify(`Copied Forge agents: ${copied.join(", ")}`, "info");
-    }
-    return availability;
-}
 function formatAgentAvailability(availability) {
     const found = availability.found.length > 0 ? availability.found.join(", ") : "none";
+    const overridden = availability.overridden.length > 0
+        ? availability.overridden.join(", ")
+        : "none";
+    const bundled = availability.bundled.length > 0 ? availability.bundled.join(", ") : "none";
     const missing = availability.missing.length > 0 ? availability.missing.join(", ") : "none";
     return `Forge phase agent availability:
-- Proper locations checked:
-${availability.properLocations.map((location) => `  - ${location}`).join("\n")}
+- Override locations checked:
+${availability.overrideLocations.map((location) => `  - ${location}`).join("\n")}
 - Bundled defaults: ${availability.bundledLocation}
+- Override agents: ${overridden}
+- Bundled local defaults used: ${bundled}
 - Found agents: ${found}
 - Missing agents: ${missing}
 - Copied bundled agents this run: ${availability.copiedToProject ? "yes" : "no"}`;
@@ -429,42 +398,29 @@ function formatSmartModelProfiles(localOnly) {
     const profiles = Object.entries(FORGE_SMART_MODEL_PROFILES)
         .map(([step, profile]) => `- ${step} → ${profile.agent}: budget=${profile.budget}, ceiling=${profile.ceiling}, thinking=${profile.thinking}, needs=${profile.needs.join("+")}, tools=${profile.tools.join(", ")}`)
         .join("\n");
-    const localOptions = localOnly
-        ? `
-  local: true,
-  fallbackSelectors: [...DEFAULT_LOCAL_FALLBACK_SELECTORS],`
-        : "";
     const localFallbacks = localOnly
         ? `\n- Local fallback selectors: ${DEFAULT_LOCAL_FALLBACK_SELECTORS.join(", ")}`
         : "";
     return `# Smart model phase routing
-Use \`smart-model-run\` for model selection when dispatching Forge phase agents. Each phase has a mode profile tuned to the risk of that phase; do not reuse one model choice for every phase unless smart-model-run selects the same candidate.
+Forge has already resolved the smart-model-run phase profiles below. Use these profiles as dispatch constraints for Forge phase agents; do not try to import, install, or execute \`smart-model-run\` from the target repository or shell. The package is an extension dependency, not a per-app runtime contract.
 
 ${profiles}${localFallbacks}
 
-Dispatch shape for each phase:
-\`\`\`ts
-import { DEFAULT_LOCAL_FALLBACK_SELECTORS, smartRun } from "smart-model-run";
-
-const result = await smartRun({
-  cwd: process.cwd(),
-  prompt: phasePrompt,
-  runner: runPiSubagent,
-  modelRegistry,${localOptions}
-  budget: profile.budget,
-  ceiling: profile.ceiling,
-  thinking: profile.thinking,
-  needs: profile.needs,
-  tools: profile.tools,
-});
-\`\`\`
-If smart-model-run cannot find or run a model for a phase, block that phase and report the attempted selectors instead of silently falling back to an untracked model.`;
+Dispatch each phase with the listed agent, thinking level, and tool set. Choose the best available Pi model that satisfies the budget/ceiling/needs profile. If no available model satisfies a phase profile, block that phase and report the attempted profile and available model selectors instead of silently falling back to an untracked model.`;
 }
 function localOnlyModelGuidance(localOnly) {
     if (!localOnly)
         return "";
     return `# Local-only model mode
-The user included \`--local\`, so keep all model-assisted phase dispatch on local providers only. When dispatching subagents through smart-model-run, pass \`local: true\` plus \`fallbackSelectors: [...DEFAULT_LOCAL_FALLBACK_SELECTORS]\`, and allow only local provider selectors: \`ollama/*\`, \`lmstudio/*\`, or \`local/*\`. Try local selectors in order, starting with ollama/ornith:35b, then move down the listed fallback selectors.`;
+The user included \`--local\`, so keep all model-assisted phase dispatch on local providers only. Allow only local provider selectors: \`ollama/*\`, \`lmstudio/*\`, or \`local/*\`. Try local selectors in order, starting with ollama/ornith:35b, then move down the listed fallback selectors. Do not install or import model-routing packages from the target repository.`;
+}
+function remoteProviderCostPolicy(localOnly) {
+    if (localOnly)
+        return "";
+    return `# Remote model cost policy
+For non-local Forge phase dispatch, prefer providers in this order: \`openai-codex/*\` or \`openai/*\` first, then \`cursor/*\`, then \`openrouter/*\` only as a last resort.
+
+Before using any \`openrouter/*\` model, stop and ask the user for explicit approval. The approval request must name the phase, the exact OpenRouter model selector, and the cheaper OpenAI/Cursor selectors that were attempted or unavailable. Do not treat prior generic approval, default model settings, or an unavailable preferred provider as permission to use OpenRouter.`;
 }
 function agentContracts() {
     return `Focused subagent contracts:
@@ -477,7 +433,17 @@ function agentContracts() {
 - Final verify agent (use \`forge-final-verify\` when available): read-only; verifies commands, diff ownership, temporary red checkpoint handling, and commit ancestry instructions.
 - Parent agent: owns git state, commits, squashes, reverts, cleanup of agents/worktrees, and final ticket completion judgment.`;
 }
-function buildForgePrompt(parsed, gitContext, lookups, settings, agentAvailability, settingsWarnings = []) {
+function rollingForgeContract() {
+    return `Rolling Forge mode:
+- Use this when the requested outcome is larger than one safely knowable TDD slice.
+- Do not fully decompose the entire ticket up front. Record future work as candidates, deferred items, or blocked items until current code reality makes the next step clear.
+- Choose only the next definitely useful, validated behavior item for deep planning.
+- Each ready backlog item must run in a fresh agent context. Do not inherit the full prior conversation, stale worker reasoning, or unrelated previous ticket context.
+- Only carry forward curated summaries and slice packets: behavior, why-now, dependency facts, relevant files, allowed file areas, focused command, expected red reason, validation evidence, final commit, and new durable facts.
+- Reassess current code reality after each completed item before promoting the next candidate to ready.
+- Discovered risk or future work must not auto-expand scope. Record it as candidate, deferred, or blocked unless the current ticket and current code make it the next definitely useful item.`;
+}
+function buildForgePrompt(parsed, gitContext, lookups, settings, agentAvailability, settingsWarnings = [], mode = "standard") {
     const foundContext = lookups.some((lookup) => lookup.status === "found")
         ? "Ticket context was found by the extension below. Verify and supplement it before acting."
         : "The extension did not resolve complete ticket context. Use linear-cli and/or gh to fetch the ticket before planning implementation.";
@@ -485,9 +451,12 @@ function buildForgePrompt(parsed, gitContext, lookups, settings, agentAvailabili
     const userContext = parsed.userContext
         ? `\n# Additional user context\n${parsed.userContext}\n`
         : "";
-    return `Run Forge for: ${target}
+    const heading = mode === "rolling" ? "Run Rolling Forge" : "Run Forge";
+    const rollingInstructions = mode === "rolling" ? `\n${rollingForgeContract()}\n` : "";
+    return `${heading} for: ${target}
 
 Forge is an extension-command orchestration, not an rpiv workflow and not a replacement for the tdd skill. Use it to implement a ticket through ticket-driven TDD with focused subagents, mandatory git CLI validation, temporary red checkpoints, cleanup, and one final commit per behavior slice.
+${rollingInstructions}
 ${userContext}
 ${foundContext}
 
@@ -513,6 +482,8 @@ ${formatSmartModelProfiles(parsed.localOnly)}
 
 ${localOnlyModelGuidance(parsed.localOnly)}
 
+${remoteProviderCostPolicy(parsed.localOnly)}
+
 ${forgeLoopContract()}
 
 ${agentContracts()}
@@ -534,6 +505,30 @@ Final report must include:
 - For each slice: red test, intended failure reason, final commit hash/title, cleanup decision, and verification commands/results, including the full final validation command set.
 - Git cleanup result: status, temporary commits/branches/worktrees removed, and confirmation no unrelated files remain.
 - Remaining requirements, blockers, or ticket observations.`;
+}
+function buildSpecMapPrompt(featurePath, gitContext) {
+    return `Run SpecMap for: ${featurePath}
+
+SpecMap is the traceability preflight for Rolling Forge. Parse Gherkin feature files under \`${featurePath}\`, connect scenarios to the lowest useful executable tests, and prepare coverage evidence before /rolling chooses the next ready behavior.
+
+# Initial git context from extension
+${gitContext}
+
+SpecMap contract:
+- Parse every \`.feature\` file under \`${featurePath}\` by Feature, Rule, and Scenario.
+- ensure every Rule and Scenario has a stable tag using the existing convention when present: \`@rule-...\` and \`@scenario-...\`.
+- Search the test suite for matching behavior coverage at the lowest useful test level: unit first, integration when behavior crosses module boundaries, and e2e only when lower-level tests cannot prove the behavior.
+- add high-confidence coverage tags to matching tests, such as \`// @covers scenario-FORGE-S001\` or the nearest project convention.
+- Do not invent a coverage link when the match is ambiguous. Report ambiguous and missing coverage instead.
+- Produce or update trace evidence that links Gherkin scenario → executable test → code area.
+- Then run or hand off to \`/rolling\` with uncovered or partially covered scenarios as candidate backlog items.
+
+Final report must include:
+- Feature files scanned.
+- Scenario tags added or already present.
+- Test coverage tags added or already present.
+- Missing or ambiguous scenario coverage.
+- Recommended next ready items for \`/rolling\`.`;
 }
 function renderStatus(status) {
     if (!status)
@@ -560,52 +555,80 @@ export default function (pi) {
         }
         publishStatus(ctx);
     });
-    const forgeCommand = {
-        description: "Orchestrate ticket-driven TDD with red, green, verify, cleanup agents and mandatory git checks.",
-        handler: async (args, ctx) => {
-            const parsed = parseArgs(args);
-            const target = parsed.selector || "current branch";
-            if (isDashPrefixedSelector(parsed.selector)) {
+    function commandFor(mode, commandLabel) {
+        return {
+            description: mode === "rolling"
+                ? "Run Rolling Forge with just-in-time TDD planning and fresh agents per item."
+                : "Orchestrate ticket-driven TDD with red, green, verify, cleanup agents and mandatory git checks.",
+            handler: async (args, ctx) => {
+                const parsed = parseArgs(args);
+                const target = parsed.selector || "current branch";
+                if (isDashPrefixedSelector(parsed.selector)) {
+                    currentStatus = {
+                        phase: "blocked",
+                        target,
+                        progress: "invalid selector",
+                    };
+                    publishStatus(ctx);
+                    ctx.ui.notify(`/${commandLabel} blocked invalid ticket selector: ${parsed.selector}`, "error");
+                    return;
+                }
+                ctx.ui.notify(`/${commandLabel} resolving ${target}`, "info");
+                const isProjectTrusted = ctx.isProjectTrusted;
+                const settingsResult = loadForgeSettingsWithWarnings(ctx.cwd, {
+                    projectTrusted: isProjectTrusted?.() ?? false,
+                });
+                const { settings } = settingsResult;
+                if (settingsResult.warnings.length > 0) {
+                    ctx.ui.notify(settingsWarningNotification(settingsResult.warnings), "warning");
+                }
+                const [gitContext, lookups, agentAvailability] = await Promise.all([
+                    collectGitContext(ctx.cwd, settings),
+                    collectTicketLookups(parsed.selector, ctx.cwd, settings),
+                    getForgeAgentAvailability(ctx.cwd),
+                ]);
+                const prompt = buildForgePrompt(parsed, gitContext, lookups, settings, agentAvailability, settingsResult.warnings, mode);
+                const queued = !ctx.isIdle();
                 currentStatus = {
-                    phase: "blocked",
+                    phase: queued ? "queued" : "working",
                     target,
-                    progress: "invalid selector",
+                    progress: "intake",
                 };
                 publishStatus(ctx);
-                ctx.ui.notify(`/forge blocked invalid ticket selector: ${parsed.selector}`, "error");
-                return;
-            }
-            ctx.ui.notify(`/forge resolving ${target}`, "info");
-            const isProjectTrusted = ctx.isProjectTrusted;
-            const settingsResult = loadForgeSettingsWithWarnings(ctx.cwd, {
-                projectTrusted: isProjectTrusted?.() ?? false,
-            });
-            const { settings } = settingsResult;
-            if (settingsResult.warnings.length > 0) {
-                ctx.ui.notify(settingsWarningNotification(settingsResult.warnings), "warning");
-            }
-            const [gitContext, lookups, agentAvailability] = await Promise.all([
-                collectGitContext(ctx.cwd, settings),
-                collectTicketLookups(parsed.selector, ctx.cwd, settings),
-                ensureForgeAgents(ctx.cwd, ctx, settings),
-            ]);
-            const prompt = buildForgePrompt(parsed, gitContext, lookups, settings, agentAvailability, settingsResult.warnings);
+                if (queued) {
+                    pi.sendUserMessage(prompt, { deliverAs: "followUp" });
+                    ctx.ui.notify(`/${commandLabel} queued as follow-up`, "info");
+                    return;
+                }
+                pi.sendUserMessage(prompt);
+            },
+        };
+    }
+    pi.registerCommand("specmap", {
+        description: "Map feature scenarios to the lowest useful executable tests before Rolling Forge.",
+        handler: async (args, ctx) => {
+            const featurePath = args.trim() || "features";
+            ctx.ui.notify(`/specmap mapping ${featurePath}`, "info");
+            const gitContext = await collectGitContext(ctx.cwd, DEFAULT_FORGE_SETTINGS);
+            const prompt = buildSpecMapPrompt(featurePath, gitContext);
             const queued = !ctx.isIdle();
             currentStatus = {
                 phase: queued ? "queued" : "working",
-                target,
-                progress: "intake",
+                target: featurePath,
+                progress: "specmap",
             };
             publishStatus(ctx);
             if (queued) {
                 pi.sendUserMessage(prompt, { deliverAs: "followUp" });
-                ctx.ui.notify("/forge queued as follow-up", "info");
+                ctx.ui.notify("/specmap queued as follow-up", "info");
                 return;
             }
             pi.sendUserMessage(prompt);
         },
-    };
+    });
+    const forgeCommand = commandFor("standard", "forge");
     pi.registerCommand("forge", forgeCommand);
     pi.registerCommand("tdd", forgeCommand);
+    pi.registerCommand("rolling", commandFor("rolling", "rolling"));
 }
 //# sourceMappingURL=forge.js.map

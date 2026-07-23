@@ -4,11 +4,13 @@ Feature: Forge settings documentation stays synchronized with defaults
   documented settings example must stay identical to those defaults so readers
   never copy stale configuration.
 
+  @scenario-forge-settings-sample-is-generated-from-the-zod-validated-defaults
   Scenario: forge settings sample is generated from the Zod-validated defaults
     Given the Zod-validated Forge config model defines the default settings
     When the settings sample file is generated
     Then docs/data/forge-settings.sample.json equals the generated defaults
 
+  @scenario-readers-see-the-current-forge-settings-defaults-in-the-tdd-guide
   Scenario: readers see the current forge settings defaults in the TDD guide
     Given the TDD guide embeds a Forge settings JSON example
     When a reader follows the Before you begin section

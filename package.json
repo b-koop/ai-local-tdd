@@ -20,7 +20,8 @@
   "homepage": "https://github.com/b-koop/the-forge#readme",
   "pi": {
     "extensions": [
-      "./dist/extensions/forge.js"
+      "./dist/extensions/forge.js",
+      "./dist/extensions/ticket-master.js"
     ]
   },
   "files": [

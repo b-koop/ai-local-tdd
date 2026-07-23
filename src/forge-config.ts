@@ -43,14 +43,11 @@ const rawForgeSkillsSchema = z.partialRecord(
 	forgeAiStepSchema,
 	forgeSkillListSchema,
 );
-const agentInstallTargetSchema = z.enum(["project", "global"]);
-
 export const forgeSettingsSchema = z.object({
 	retries: z.number().int().min(0).default(0),
 	timeoutMs: z.number().int().positive().default(DEFAULT_COMMAND_TIMEOUT_MS),
 	testCommands: testCommandsSchema.default(DEFAULT_TEST_COMMANDS),
 	skills: forgeSkillsSchema.default(DEFAULT_FORGE_SKILLS),
-	agentInstallTarget: agentInstallTargetSchema.default("project"),
 });
 
 export const forgeSettingsFileSchema = z.object({
@@ -81,7 +78,6 @@ function optionalValidForgeSkills() {
 
 const tolerantNonNegativeInteger = optionalValid(z.number().int().min(0));
 const tolerantPositiveInteger = optionalValid(z.number().int().positive());
-const tolerantAgentInstallTarget = optionalValid(agentInstallTargetSchema);
 
 export const rawForgeSettingsSchema = z.looseObject({
 	retries: tolerantNonNegativeInteger,
@@ -90,7 +86,6 @@ export const rawForgeSettingsSchema = z.looseObject({
 	testCommands: optionalValid(testCommandsSchema),
 	testCommand: optionalValid(nonEmptyStringSchema),
 	skills: optionalValidForgeSkills(),
-	agentInstallTarget: tolerantAgentInstallTarget,
 });
 
 export type ForgeSettings = z.infer<typeof forgeSettingsSchema>;
@@ -117,7 +112,6 @@ const FORGE_SETTING_KEYS = new Set([
 	"testCommands",
 	"testCommand",
 	"skills",
-	"agentInstallTarget",
 ]);
 
 const FORGE_AI_STEP_SET = new Set<string>(FORGE_AI_STEPS);
@@ -311,30 +305,6 @@ function parseLegacyTestCommand(
 	);
 }
 
-function parseAgentInstallTarget(
-	value: Record<string, unknown>,
-	source: string,
-	parsed: Record<string, unknown>,
-	warnings: ForgeSettingsWarning[],
-): void {
-	if (!("agentInstallTarget" in value)) return;
-	const result = agentInstallTargetSchema.safeParse(value.agentInstallTarget);
-	if (result.success) {
-		parsed.agentInstallTarget = result.data;
-		return;
-	}
-	warnings.push(
-		warning(
-			source,
-			"forge.agentInstallTarget",
-			"agentInstallTarget",
-			`Expected "project" or "global", got ${describeExpected(value.agentInstallTarget)}.`,
-			"Using the previous/default agent install target.",
-			'Set agentInstallTarget to "project" or "global".',
-		),
-	);
-}
-
 function parseSkills(
 	value: Record<string, unknown>,
 	source: string,
@@ -418,7 +388,6 @@ function validateRawForgeSettings(
 	parseLegacyTimeout(value, source, parsed, warnings);
 	parseTestCommands(value, source, parsed, warnings);
 	parseLegacyTestCommand(value, source, parsed, warnings);
-	parseAgentInstallTarget(value, source, parsed, warnings);
 	parseSkills(value, source, parsed, warnings);
 	return {
 		settings: rawForgeSettingsSchema.parse(parsed),
@@ -475,8 +444,6 @@ export function mergeForgeSettingsWithWarnings(
 				...base.skills,
 				...(parsed.settings.skills ?? {}),
 			},
-			agentInstallTarget:
-				parsed.settings.agentInstallTarget ?? base.agentInstallTarget,
 		}),
 		warnings: parsed.warnings,
 	};

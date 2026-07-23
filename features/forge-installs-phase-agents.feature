@@ -1,26 +1,18 @@
 Feature: Forge makes phase agents available
 
-  Forge ships default phase-agent prompts, but users may customize those agents
+  Forge ships default phase-agent prompts and lets users override those agents
   in project-local or user-global agent directories.
 
-  Scenario: /forge uses existing phase agents when they are already available
-    Given every Forge phase agent exists in a normal Pi agent location
+  @scenario-forge-uses-bundled-local-phase-agents-without-asking-to-install
+  Scenario: /forge uses bundled local phase agents without asking to install
+    Given no Forge phase agent override exists in project-local or user-global agent directories
     When Forge prepares the orchestration prompt
-    Then the prompt reports the available agents without copying bundled defaults
+    Then the prompt reports bundled local defaults as available
+    And the user is not asked to install or copy agents
 
-  Scenario: /forge offers bundled phase agents when required agents are missing
-    Given one or more Forge phase agents are missing from normal Pi agent locations
+  @scenario-forge-reports-project-phase-agent-overrides-before-bundled-defaults
+  Scenario: /forge reports project phase agent overrides before bundled defaults
+    Given a project-local Forge phase agent override exists
     When Forge prepares the orchestration prompt
-    Then the user is asked whether to copy the bundled defaults into the project agent directory
-
-  Scenario: /forge reports copied phase agents in the orchestration prompt
-    Given the user accepts copying missing bundled phase agents
-    When Forge prepares the orchestration prompt
-    Then the prompt names the agents that are now available for the run
-    And the user is notified which agents were copied
-
-  Scenario: /forge can install bundled agents into the global Pi agent directory
-    Given global Forge settings choose the global agent install target
-    When the user accepts copying missing bundled phase agents
-    Then bundled phase agents are copied into the user-global Pi agent directory
-    And the project-local agent directory is left unchanged
+    Then the prompt reports the override for that phase
+    And bundled local defaults remain available for phases without overrides

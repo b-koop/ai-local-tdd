@@ -234,6 +234,62 @@ test("/tdd is an alias for the forge command", async (t) => {
 	});
 });
 
+// @covers @scenario-rolling-starts-just-in-time-tdd-planning
+// @covers @scenario-each-ready-item-uses-a-fresh-agent-context
+// @covers @scenario-future-work-waits-until-current-reality-is-clear
+test("/rolling starts Rolling Forge with fresh per-item agent instances", async (t) => {
+	const { sentMessages, notifications } = await invokeForge(t, {
+		commandName: "rolling",
+		input: "ABC-789",
+	});
+
+	assert.equal(sentMessages.length, 1);
+	const prompt = sentMessages[0];
+	assert.match(prompt, /Run Rolling Forge for: ABC-789/);
+	assert.match(prompt, /Do not fully decompose the entire ticket up front/);
+	assert.match(
+		prompt,
+		/Each ready backlog item must run in a fresh agent context/,
+	);
+	assert.match(
+		prompt,
+		/Only carry forward curated summaries and slice packets/,
+	);
+	assert.match(
+		prompt,
+		/Reassess current code reality after each completed item/,
+	);
+	assert.deepEqual(notifications[0], {
+		message: "/rolling resolving ABC-789",
+		level: "info",
+	});
+});
+
+// @covers @scenario-specmap-defaults-to-feature-files
+// @covers @scenario-scenario-coverage-uses-the-lowest-useful-test-level
+// @covers @scenario-ambiguous-matches-are-reported-instead-of-linked
+// @covers @scenario-rolling-forge-receives-uncovered-scenarios-as-candidates
+test("/specmap defaults to the features folder and prepares trace tagging", async (t) => {
+	const { sentMessages, notifications } = await invokeForge(t, {
+		commandName: "specmap",
+		input: "",
+	});
+
+	assert.equal(sentMessages.length, 1);
+	const prompt = sentMessages[0];
+	assert.match(prompt, /Run SpecMap for: features/);
+	assert.match(prompt, /Parse Gherkin feature files under `features`/);
+	assert.match(prompt, /ensure every Rule and Scenario has a stable tag/);
+	assert.match(prompt, /add high-confidence coverage tags to matching tests/);
+	assert.match(prompt, /lowest useful test level/);
+	assert.match(prompt, /Then run or hand off to `\/rolling`/);
+	assert.deepEqual(notifications[0], {
+		message: "/specmap mapping features",
+		level: "info",
+	});
+});
+
+// @covers @scenario-forge-keeps-the-user-s-context-after-the-ticket-selector
 test("/forge keeps the user's context after the ticket selector", async () => {
 	let forgeHandler;
 	const sentMessages = [];
@@ -280,7 +336,8 @@ test("/forge keeps the user's context after the ticket selector", async () => {
 	}
 });
 
-test("/forge offers to copy bundled agents when proper locations are missing", async (t) => {
+// @covers @scenario-forge-uses-bundled-local-phase-agents-without-asking-to-install
+test("/forge uses bundled local phase agents without asking to install", async (t) => {
 	const cwd = join(tmpdir(), `forge-agents-${Date.now()}-${Math.random()}`);
 	const userAgentsDir = join(
 		tmpdir(),
@@ -333,58 +390,48 @@ test("/forge offers to copy bundled agents when proper locations are missing", a
 		},
 	});
 
-	assert.equal(confirmations.length, 1);
-	assert.match(confirmations[0].message, /forge-red/);
-	assert.match(confirmations[0].message, /\.pi\/agents/);
-	const copiedRedAgent = await readFile(
-		join(cwd, ".pi", "agents", "forge-red.md"),
-		"utf8",
+	assert.equal(confirmations.length, 0);
+	await assert.rejects(
+		readFile(join(cwd, ".pi", "agents", "forge-red.md"), "utf8"),
+		/error|ENOENT/,
 	);
-	assert.match(copiedRedAgent, /^name:\s*forge-red$/m);
-	assert.match(sentMessages[0], /Copied bundled agents this run: yes/);
+	assert.match(sentMessages[0], /Bundled local defaults used: .*forge-red/);
+	assert.match(sentMessages[0], /Override agents: none/);
+	assert.match(sentMessages[0], /Missing agents: none/);
+	assert.match(sentMessages[0], /Copied bundled agents this run: no/);
 	assert.ok(
-		notifications.some(({ message }) => /Copied Forge agents/.test(message)),
+		notifications.every(({ message }) => !/Copied Forge agents/.test(message)),
 	);
 });
 
-test("/forge can install bundled agents into the global Pi agent directory", async (t) => {
+// @covers @scenario-forge-reports-project-phase-agent-overrides-before-bundled-defaults
+test("/forge reports project phase agent overrides before bundled defaults", async (t) => {
 	const cwd = join(
 		tmpdir(),
-		`forge-global-agents-${Date.now()}-${Math.random()}`,
+		`forge-project-agent-override-${Date.now()}-${Math.random()}`,
 	);
-	const globalDir = join(
-		tmpdir(),
-		`forge-global-settings-${Date.now()}-${Math.random()}`,
-	);
+	const projectAgentsDir = join(cwd, ".pi", "agents");
 	const userAgentsDir = join(
 		tmpdir(),
 		`forge-user-agents-${Date.now()}-${Math.random()}`,
 	);
 	await Promise.all([
-		mkdir(cwd, { recursive: true }),
-		mkdir(globalDir, { recursive: true }),
+		mkdir(projectAgentsDir, { recursive: true }),
 		mkdir(userAgentsDir, { recursive: true }),
 	]);
-	const globalPath = join(globalDir, "settings.json");
 	await writeFile(
-		globalPath,
-		JSON.stringify({ forge: { agentInstallTarget: "global" } }),
+		join(projectAgentsDir, "forge-red.md"),
+		"---\nname: forge-red\ndescription: Project override\n---\n\n# Project override\n",
 	);
 
 	const oldUserAgentsDir = process.env.PI_FORGE_USER_AGENTS_DIR;
-	const oldGlobalSettingsPath = process.env.PI_FORGE_GLOBAL_SETTINGS_PATH;
 	process.env.PI_FORGE_USER_AGENTS_DIR = userAgentsDir;
-	process.env.PI_FORGE_GLOBAL_SETTINGS_PATH = globalPath;
 	t.after(async () => {
 		if (oldUserAgentsDir === undefined)
 			delete process.env.PI_FORGE_USER_AGENTS_DIR;
 		else process.env.PI_FORGE_USER_AGENTS_DIR = oldUserAgentsDir;
-		if (oldGlobalSettingsPath === undefined)
-			delete process.env.PI_FORGE_GLOBAL_SETTINGS_PATH;
-		else process.env.PI_FORGE_GLOBAL_SETTINGS_PATH = oldGlobalSettingsPath;
 		await Promise.all([
 			rm(cwd, { recursive: true, force: true }),
-			rm(globalDir, { recursive: true, force: true }),
 			rm(userAgentsDir, { recursive: true, force: true }),
 		]);
 	});
@@ -392,7 +439,6 @@ test("/forge can install bundled agents into the global Pi agent directory", asy
 	let forgeHandler;
 	const sentMessages = [];
 	const confirmations = [];
-	const notifications = [];
 	const pi = {
 		on() {},
 		registerCommand(name, command) {
@@ -408,38 +454,23 @@ test("/forge can install bundled agents into the global Pi agent directory", asy
 	await forgeHandler("", {
 		cwd,
 		isIdle: () => true,
-		isProjectTrusted: () => false,
 		ui: {
 			confirm(title, message) {
 				confirmations.push({ title, message });
 				return Promise.resolve(true);
 			},
-			notify(message, level) {
-				notifications.push({ message, level });
-			},
+			notify() {},
 			setStatus() {},
 		},
 	});
 
-	assert.equal(confirmations.length, 1);
-	assert.match(confirmations[0].message, /forge-red/);
-	assert.match(confirmations[0].message, /global Pi agent directory/);
-	assert.match(confirmations[0].message, new RegExp(userAgentsDir));
-	const copiedRedAgent = await readFile(
-		join(userAgentsDir, "forge-red.md"),
-		"utf8",
-	);
-	assert.match(copiedRedAgent, /^name:\s*forge-red$/m);
-	await assert.rejects(
-		readFile(join(cwd, ".pi", "agents", "forge-red.md"), "utf8"),
-		/error|ENOENT/,
-	);
-	assert.match(sentMessages[0], /Copied bundled agents this run: yes/);
-	assert.ok(
-		notifications.some(({ message }) => /Copied Forge agents/.test(message)),
-	);
+	assert.equal(confirmations.length, 0);
+	assert.match(sentMessages[0], /Override agents: forge-red/);
+	assert.match(sentMessages[0], /Bundled local defaults used: .*forge-green/);
+	assert.match(sentMessages[0], /Missing agents: none/);
 });
 
+// @covers @scenario-forge-labels-ticket-lookup-text-as-untrusted-before-agents-read-it
 test("/forge labels ticket lookup text as untrusted before agents read it", async (t) => {
 	await withFakeTicketCommands(t, {
 		gh: {
@@ -520,6 +551,7 @@ test("/forge labels ticket lookup text as untrusted before agents read it", asyn
 	);
 });
 
+// @covers @scenario-forge-reports-external-lookup-timeouts-clearly
 test("/forge reports a timeout when an external ticket command hangs", async () => {
 	const { runForgeCommand } = await import("../dist/extensions/forge.js");
 	assert.equal(typeof runForgeCommand, "function");
@@ -535,6 +567,7 @@ test("/forge reports a timeout when an external ticket command hangs", async () 
 	);
 });
 
+// @covers @scenario-forge-includes-trusted-project-settings-in-the-orchestration-prompt
 test("/forge includes project forge settings when project is trusted", async (t) => {
 	const cwd = await withProjectSettings(
 		t,
@@ -572,10 +605,10 @@ test("/forge keeps ticket selection local when requested", async (t) => {
 
 	assert.equal(sentMessages.length, 1);
 	assert.match(sentMessages[0], /ABC-123/);
-	assert.match(sentMessages[0], /local:\s*true/);
+	assert.match(sentMessages[0], /Local fallback selectors: ollama\/ornith:35b/);
 	assert.match(
 		sentMessages[0],
-		/fallbackSelectors:\s*\[\.\.\.DEFAULT_LOCAL_FALLBACK_SELECTORS\]/,
+		/Do not install or import model-routing packages from the target repository/,
 	);
 	assert.match(sentMessages[0], /ollama\/\*/);
 	assert.match(sentMessages[0], /lmstudio\/\*/);
@@ -586,6 +619,7 @@ test("/forge keeps ticket selection local when requested", async (t) => {
 	);
 });
 
+// @covers @scenario-forge-warns-about-invalid-testcommands-and-uses-fallback-commands
 test("/forge warns about invalid testCommands and uses fallback commands", async (t) => {
 	const cwd = await withProjectSettings(
 		t,
@@ -616,6 +650,7 @@ test("/forge warns about invalid testCommands and uses fallback commands", async
 	);
 });
 
+// @covers @scenario-forge-keeps-valid-skill-siblings-while-warning-about-invalid-skill-steps
 test("/forge keeps valid skill siblings while warning about invalid skill steps", async (t) => {
 	const cwd = await withProjectSettings(
 		t,
@@ -641,6 +676,7 @@ test("/forge keeps valid skill siblings while warning about invalid skill steps"
 	);
 });
 
+// @covers @scenario-forge-warns-about-legacy-testcommand-while-preserving-compatibility
 test("/forge warns about legacy testCommand while preserving compatibility", async (t) => {
 	const cwd = await withProjectSettings(
 		t,
@@ -659,6 +695,7 @@ test("/forge warns about legacy testCommand while preserving compatibility", asy
 	assert.match(sentMessages[0], /pnpm --filter app test/);
 });
 
+// @covers @scenario-forge-warns-about-malformed-trusted-project-settings-json
 test("/forge warns about malformed trusted project settings JSON", async (t) => {
 	const cwd = await withProjectSettings(
 		t,
@@ -680,6 +717,7 @@ test("/forge warns about malformed trusted project settings JSON", async (t) => 
 	);
 });
 
+// @covers @scenario-forge-warns-when-untrusted-project-settings-are-skipped
 test("/forge warns when untrusted project settings are skipped", async (t) => {
 	const cwd = await withProjectSettings(
 		t,
@@ -702,6 +740,7 @@ test("/forge warns when untrusted project settings are skipped", async (t) => {
 	);
 });
 
+// @covers @scenario-forge-reads-global-settings-from-the-configured-settings-location
 test("/forge reads global forge settings from the configured settings path", async (t) => {
 	const globalDir = join(
 		tmpdir(),
@@ -736,6 +775,7 @@ test("/forge reads global forge settings from the configured settings path", asy
 	assert.match(sentMessages[0], /retries: 2/);
 });
 
+// @covers @scenario-forge-settings-sample-is-generated-from-the-zod-validated-defaults
 test("forge settings sample is generated from the Zod-validated defaults", async () => {
 	const samplePath = join(
 		repoRoot,
@@ -753,6 +793,7 @@ test("forge settings sample is generated from the Zod-validated defaults", async
 	assert.deepEqual(sample.forge.testCommands, ["pnpm typecheck", "pnpm test"]);
 });
 
+// @covers @scenario-readers-see-the-current-forge-settings-defaults-in-the-tdd-guide
 test("readers see the current forge settings defaults in the TDD guide", async () => {
 	const guidePath = join(
 		repoRoot,
@@ -781,6 +822,8 @@ test("readers see the current forge settings defaults in the TDD guide", async (
 	assert.deepEqual(settingsExamples[0], generateForgeSettingsFileSample());
 });
 
+// @covers @scenario-forge-accepts-legacy-timeout-settings-with-a-warning
+// @covers @scenario-forge-ignores-unknown-settings-without-exposing-raw-unsafe-values
 test("forge settings validation keeps legacy timeout alias and ignores invalid fields", () => {
 	const settings = mergeForgeSettings(DEFAULT_FORGE_SETTINGS, {
 		retries: -1,
@@ -833,6 +876,7 @@ function guideSection(guide, heading) {
 	return match.groups.section;
 }
 
+// @covers @scenario-record-testable-items
 test("Testable behavior items are recorded before TDD starts", async () => {
 	const feature = await readFile(
 		join(repoRoot, "features", "verified-tdd-microcycle.feature"),
@@ -846,6 +890,7 @@ test("Testable behavior items are recorded before TDD starts", async () => {
 	assert.match(feature, /TDD implementation loop has not started yet/);
 });
 
+// @covers @scenario-backlog-untracked
 test("The run backlog is reused without becoming a project artifact", async () => {
 	const feature = await readFile(
 		join(repoRoot, "features", "verified-tdd-microcycle.feature"),
@@ -859,6 +904,7 @@ test("The run backlog is reused without becoming a project artifact", async () =
 	assert.match(feature, /not included in tracked project changes/);
 });
 
+// @covers @scenario-select-next-smallest-slice
 test("Select the next smallest behavior slice", async () => {
 	const guide = await readTddMicrocycleGuide();
 	const programmaticLoop = guideSection(guide, "Programmatic loop");
@@ -875,6 +921,7 @@ test("Select the next smallest behavior slice", async () => {
 	assert.match(selection, /selected behavior can be named in one sentence/);
 });
 
+// @covers @scenario-verify-red
 test("Red is verified as an intended failure", async () => {
 	const guide = await readTddMicrocycleGuide();
 	const red = guideSection(
@@ -909,6 +956,7 @@ test("Deterministic gate failures block AI continuation until recovery is docume
 	assert.match(deterministicGates, /Recovery/);
 });
 
+// @covers @scenario-green-smallest-change
 test("Green change is the smallest passing implementation", async () => {
 	const guide = await readTddMicrocycleGuide();
 	const green = guideSection(guide, "4. Make the smallest green change");
@@ -928,6 +976,7 @@ test("Green change is the smallest passing implementation", async () => {
 	);
 });
 
+// @covers @scenario-refactor-keeps-behavior
 test("Refactor keeps observable behavior unchanged", async () => {
 	const guide = await readTddMicrocycleGuide();
 	const refactor = guideSection(guide, "6. Refactor without changing behavior");
@@ -941,6 +990,7 @@ test("Refactor keeps observable behavior unchanged", async () => {
 	assert.match(refactor, /wider check set remains green/);
 });
 
+// @covers @scenario-final-commit-anchored
 test("The final commit is anchored to the recorded start hash", async () => {
 	const guide = await readTddMicrocycleGuide();
 	const programmaticLoop = guideSection(guide, "Programmatic loop");
@@ -960,6 +1010,7 @@ test("The final commit is anchored to the recorded start hash", async () => {
 	assert.match(commit, /no leftover temporary red commits/);
 });
 
+// @covers @scenario-complete-or-block-item
 test("Forge finishes or blocks each recorded item before moving on", async () => {
 	const feature = await readFile(
 		join(repoRoot, "features", "verified-tdd-microcycle.feature"),
@@ -970,6 +1021,7 @@ test("Forge finishes or blocks each recorded item before moving on", async () =>
 	assert.match(feature, /cannot continue is marked with status "blocked"/);
 });
 
+// @covers @scenario-run-full-suites
 test("Final verification runs full suites after all items finish", async () => {
 	const feature = await readFile(
 		join(repoRoot, "features", "verified-tdd-microcycle.feature"),
@@ -980,6 +1032,7 @@ test("Final verification runs full suites after all items finish", async () => {
 	assert.match(feature, /every configured end-to-end test suite is executed/);
 });
 
+// @covers @scenario-skip-missing-e2e-with-evidence
 test("Missing end-to-end suite is skipped with evidence", async () => {
 	const feature = await readFile(
 		join(repoRoot, "features", "verified-tdd-microcycle.feature"),
@@ -990,6 +1043,7 @@ test("Missing end-to-end suite is skipped with evidence", async () => {
 	assert.match(feature, /records that no end-to-end suite was available/);
 });
 
+// @covers @scenario-investigate-suite-failures
 test("Final verification investigates suite failures before cleanup commit", async () => {
 	const feature = await readFile(
 		join(repoRoot, "features", "verified-tdd-microcycle.feature"),
@@ -1031,7 +1085,7 @@ test("/forge routes phase agents through smart-model-run profiles", async (t) =>
 	assert.match(prompt, /# Smart model phase routing/);
 	assert.match(
 		prompt,
-		/import \{ DEFAULT_LOCAL_FALLBACK_SELECTORS, smartRun \} from "smart-model-run"/,
+		/do not try to import, install, or execute `smart-model-run` from the target repository or shell/,
 	);
 	assert.match(prompt, /red → forge-red: budget=mid, ceiling=high/);
 	assert.match(prompt, /green → forge-green: budget=mid, ceiling=high/);
@@ -1040,7 +1094,31 @@ test("/forge routes phase agents through smart-model-run profiles", async (t) =>
 		/finalVerify → forge-final-verify: budget=cheap, ceiling=mid/,
 	);
 	assert.match(prompt, /needs=reliable-tools\+correctness\+codeQuality/);
-	assert.match(prompt, /block that phase and report the attempted selectors/);
+	assert.match(
+		prompt,
+		/block that phase and report the attempted profile and available model selectors/,
+	);
+});
+
+test("/forge requires explicit approval before OpenRouter model use", async (t) => {
+	const { sentMessages } = await invokeForge(t);
+
+	assert.equal(sentMessages.length, 1);
+	const prompt = sentMessages[0];
+
+	assert.match(prompt, /# Remote model cost policy/);
+	assert.match(
+		prompt,
+		/prefer providers in this order: `openai-codex\/\*` or `openai\/\*` first, then `cursor\/\*`, then `openrouter\/\*` only as a last resort/,
+	);
+	assert.match(
+		prompt,
+		/Before using any `openrouter\/\*` model, stop and ask the user for explicit approval/,
+	);
+	assert.match(
+		prompt,
+		/name the phase, the exact OpenRouter model selector, and the cheaper OpenAI\/Cursor selectors/,
+	);
 });
 
 test("readers see the kept-user-context behavior as a verified feature spec", async () => {
@@ -1184,6 +1262,9 @@ test("Forge phase contracts are available as bundled Pi agents", async () => {
 	}
 });
 
+// @covers @scenario-mainline-pushes-run-the-validation-suite
+// @covers @scenario-trusted-pull-requests-run-the-validation-suite
+// @covers @scenario-untrusted-pull-requests-do-not-run-trusted-validation-automatically
 test("trusted contributor pull requests and mainline pushes run validation", async () => {
 	const workflow = await readFile(
 		join(repoRoot, ".github", "workflows", "ci.yml"),
@@ -1232,6 +1313,7 @@ test("trusted contributor pull requests and mainline pushes run validation", asy
 	}
 });
 
+// @covers @scenario-forge-rejects-a-dash-prefixed-selector-before-ticket-lookup
 test("/forge blocks dash-prefixed input before ticket lookup commands receive it", async (t) => {
 	const fakeCommands = await withFakeTicketCommands(t, {
 		gh: { stdout: "{}" },

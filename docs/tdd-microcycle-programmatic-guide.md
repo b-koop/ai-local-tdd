@@ -265,10 +265,14 @@ Expected result:
 
 ## 7. Commit the final green state
 
-Before committing, verify the final state is fully green, all unit tests pass,
-and the history is still anchored to the slice start. Run every configured final
-validation command before `git commit`; with the default settings this includes
-`pnpm test`.
+Before committing, verify the focused behavior is green, every configured final
+validation command has been run, and the history is still anchored to the slice
+start. With the default settings this includes `pnpm test`. A wider-suite
+failure does not automatically block the slice when it is retried and classified
+with evidence as pre-existing or unrelated to the slice by code and behavior.
+Connected failures still block and must return to green/refactor. Ambiguous
+failures are recorded as follow-up questions for the user or sent to a near-final
+side investigation before cleanup continues.
 
 ```bash
 git status --short
@@ -294,8 +298,12 @@ Expected result:
 
 - The final commit contains the test, implementation, and refactor for one
   behavior slice.
-- The committed state is green because every configured validation command,
-  including all unit tests, passed immediately before commit.
+- The focused behavior is green, and every configured validation command,
+  including all unit tests, either passed immediately before commit or produced
+  a retried failure classified as pre-existing or unrelated with evidence.
+- Connected validation failures are fixed before commit.
+- Ambiguous validation failures are captured as follow-up questions instead of
+  being silently ignored.
 - `HEAD^1` equals the recorded `START_SHA`, proving no extra commit was snuck in.
 - There are no leftover temporary red commits for the slice.
 
@@ -308,7 +316,7 @@ Expected result:
 | Multiple tests fail on red | Narrow the test or investigate whether the selected behavior is too large. |
 | Green requires broad production changes | Split the behavior smaller or add an enabling refactor as a separate green commit first. |
 | Refactor changes behavior | Revert the refactor batch, restore green, and retry smaller. |
-| Final checks fail | Do not commit. Return to green or split the slice. |
+| Final checks fail and reproduce after retry | Investigate connectedness to changed code or behavior. Fix connected failures, report unrelated/pre-existing failures as watch items, and turn ambiguous failures into follow-up questions. |
 
 ## Automation outputs to capture
 
@@ -339,4 +347,6 @@ For each slice, store enough evidence for review:
 
 ## Related behavior spec
 
-The companion `.feature` file should stay concise and describe only observable workflow behavior. This document is the technical how-to for implementing and validating that workflow programmatically.
+The companion `.feature` file should stay concise and describe only observable
+workflow behavior. This document is the technical how-to for implementing and
+validating that workflow programmatically.

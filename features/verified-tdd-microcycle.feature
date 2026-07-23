@@ -80,8 +80,25 @@ Feature: TDD micro-cycle workflow is observable and verifiable
     Scenario: Final verification investigates suite failures before cleanup commit
       Given every recorded behavior item is marked with status "done"
       When the full unit suite or a configured end-to-end suite fails
-      Then Forge records the failing command and likely cause before cleanup continues
-      And final cleanup is not committed while the failure remains unresolved
+      Then Forge retries the failing command before classifying the failure
+      And Forge records the failing command, failure names, excerpts, and likely cause before cleanup continues
+      And final cleanup is not committed while a connected failure remains unresolved
+
+    @scenario-unrelated-suite-failures-are-watch-items
+    Scenario: Unrelated final verification failures are reported without blocking the slice
+      Given every recorded behavior item is marked with status "done"
+      And a retried full-suite failure is not connected to the slice changes by code or behavior
+      When final verification records the failure as unrelated or pre-existing
+      Then Forge allows the final cleanup and commit to continue
+      And Forge reports the failure as a watch item for the user
+
+    @scenario-ambiguous-suite-failures-become-follow-up-questions
+    Scenario: Ambiguous final verification failures become follow-up questions
+      Given every recorded behavior item is marked with status "done"
+      And a retried full-suite failure cannot be classified as connected or unrelated
+      When final verification records the failure as ambiguous
+      Then Forge stores the unresolved item as a follow-up question for the user
+      And final cleanup waits for the user or a side investigation to resolve the question
 
     @scenario-final-commit-anchored
     Scenario: The final commit is anchored to the recorded start hash

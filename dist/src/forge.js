@@ -389,7 +389,7 @@ function forgeLoopContract() {
    h. Dispatch a green agent. Green may edit only production code and must not edit tests. If the test is wrong, unclear, or over-specified, green reports notes back to red/parent instead of weakening the test.
    i. Run git CLI checks after green. Verify no unrelated files or commits changed.
    j. Dispatch cleanup/refactor. Cleanup focuses only on production readability, naming clarity, simpler control flow, and duplication removal. It must not broaden behavior or edit tests unless the parent proves a test name itself violates naming/test-name.
-   k. Run final verify: narrow test, all configured validation commands including all unit tests, git status --short, git diff --stat, git diff --check, and commit-range inspection before the final commit.
+   k. Run final verify: narrow test, all configured validation commands including all unit tests, git status --short, git diff --stat, git diff --check, and commit-range inspection before the final commit. Retry wider-suite failures before classification. If a retried failure is connected to changed files, changed behavior, or shared logic, route it back to green/refactor and fix it. If it is pre-existing or unrelated, record command, failing test names, excerpts, retry evidence, and why it is not connected as a watch item. If it is ambiguous, store a follow-up question or use a near-final side investigation before cleanup continues.
    l. Squash the temporary red checkpoint plus green/cleanup work into one final conventional commit for that behavior slice. Ensure the temporary red commit is not left in final history.
 5. Repeat until all ticket requirements and accepted edge cases are covered.
 6. Clean up completed agent worktrees, temporary branches, checkpoint refs, scratch files, and temporary test artifacts.`;
@@ -500,13 +500,15 @@ Mandatory safety rules:
 - Do not leave unrelated files staged, committed, or modified.
 - Do not skip cleanup/refactor unless the cleanup agent/verifier explicitly finds no production readability, naming, or duplication issue.
 - Do not leave temporary red commits unsquashed in final slice history.
-- Do not create the final slice commit until all configured validation commands, including the all-unit-test command, pass.
-- Do not broaden scope to unrelated findings; record them as ticket observations when actionable.
+- Do not create the final slice commit until the focused behavior test passes and every configured validation command, including the all-unit-test command, has passed or any wider-suite failure has been retried and classified with evidence as pre-existing or unrelated to the slice by code and behavior.
+- Do not ignore connected wider-suite failures; route them back to green/refactor and fix them while preserving the behavior.
+- Do not silently accept ambiguous wider-suite failures; store a follow-up question for the user or dispatch a near-final side investigation before cleanup continues.
+- Do not broaden scope to unrelated findings; record them as ticket observations or validation watch items when actionable.
 - When agents are done, clean up their worktrees/branches/checkpoints before final completion.
 
 Final report must include:
 - Ticket source and behavior slices completed.
-- For each slice: red test, intended failure reason, final commit hash/title, cleanup decision, and verification commands/results, including the full final validation command set.
+- For each slice: red test, intended failure reason, final commit hash/title, cleanup decision, verification commands/results including the full final validation command set, and any retried wider-suite failures classified as connected, unrelated/pre-existing, or ambiguous.
 - Git cleanup result: status, temporary commits/branches/worktrees removed, and confirmation no unrelated files remain.
 - Remaining requirements, blockers, or ticket observations.`;
 }

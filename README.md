@@ -183,7 +183,8 @@ phase agents, git checks, and validation commands. The core loop is:
    - create a temporary red checkpoint commit;
    - make the smallest production-only green change;
    - run cleanup/refactor only for production readability and duplication;
-   - run final verification, including every configured validation command;
+   - run final verification, including every configured validation command, with
+     retries and connectedness classification for wider-suite failures;
    - squash red/green/cleanup into one final conventional commit whose parent is
      the recorded slice start commit.
 5. Repeat until all ticket requirements and accepted edge cases are covered.
@@ -244,8 +245,9 @@ copied into a target repository's `.pi/agents/` directory for customization.
   red test. It may edit production code only.
 - `forge-refactor`: improves production readability after green without
   changing behavior. It is production-readability only.
-- `forge-final-verify`: runs final checks and confirms git, file, and commit
-  boundaries. It is read-only.
+- `forge-final-verify`: runs final checks, retries wider-suite failures,
+  classifies whether failures are connected to the slice, and confirms git,
+  file, and commit boundaries. It is read-only.
 
 When `/forge` starts, it checks override locations first:
 
@@ -260,7 +262,8 @@ Forge's orchestration prompt routes phase-agent dispatch through
 `smart-model-run` profiles instead of one fixed model. Red and green use higher
 correctness/tool-reliability profiles; read-only planning and verification use
 cheaper profiles unless selection needs to escalate. When the user passes
-`--local`, those profiles pass `local: true` plus the local fallback selectors to `smart-model-run`, starting with `ollama/ornith:35b` before lower fallbacks.
+`--local`, those profiles pass `local: true` plus the local fallback selectors
+to `smart-model-run`, starting with `ollama/ornith:35b` before lower fallbacks.
 
 ## Settings
 
@@ -277,9 +280,9 @@ Forge reads an optional `forge` section from Pi settings.
 ### Environment Variables
 
 | Variable | Purpose | Default |
-|-----------|----------|----------|
-| `PI_FORGE_GLOBAL_SETTINGS_PATH` | Overrides the global settings file path | `~/.pi/agent/settings.json` |
-| `PI_FORGE_USER_AGENTS_DIR` | Overrides the user agents directory | `~/.pi/agent/agents/` |
+| -------- | ------- | ------- |
+| `PI_FORGE_GLOBAL_SETTINGS_PATH` | Overrides global settings | `~/.pi/agent/settings.json` |
+| `PI_FORGE_USER_AGENTS_DIR` | Overrides user agents | `~/.pi/agent/agents/` |
 
 Supported settings are defined in [`src/forge-config.ts`](src/forge-config.ts)
 and the generated sample lives at
@@ -295,7 +298,10 @@ pnpm generate:forge-settings
   timeouts.
 - `testCommands` defaults to `["pnpm typecheck", "pnpm test"]`. It is the
   ordered validation command list passed to the prompt. Final verification must
-  run the full list before the final green commit.
+  run the full list before the final green commit. Wider-suite failures are
+  retried and classified: connected failures block and return to green/refactor,
+  unrelated or pre-existing failures are reported as watch items, and ambiguous
+  failures become follow-up questions or near-final side investigations.
 - `skills` defaults per Forge step. These skill names are required in the
   prompt for intake, decomposition, red, verify-red, green, refactor, and final
   verification.
@@ -324,7 +330,9 @@ Forge's prompt contract requires these safeguards:
 - Temporary red checkpoint commits must be squashed into one final commit per
   behavior slice.
 - Final verification must run all configured validation commands, including the
-  full unit test suite, before that final commit is created.
+  full unit test suite, before that final commit is created; retried wider-suite
+  failures only stop coding when they are connected to the current slice or
+  remain ambiguous without a recorded follow-up.
 - Ticket lookup output is explicitly marked as untrusted before any agent reads
   it.
 

@@ -1219,10 +1219,50 @@ test("Final verification investigates suite failures before cleanup commit", asy
 		"utf8",
 	);
 
-	assert.match(feature, /records the failing command and likely cause/);
 	assert.match(
 		feature,
-		/final cleanup is not committed while the failure remains unresolved/,
+		/retries the failing command before classifying the failure/,
+	);
+	assert.match(
+		feature,
+		/records the failing command, failure names, excerpts, and likely cause/,
+	);
+	assert.match(
+		feature,
+		/final cleanup is not committed while a connected failure remains unresolved/,
+	);
+});
+
+// @covers @scenario-unrelated-suite-failures-are-watch-items
+test("Unrelated final verification failures are reported without blocking the slice", async () => {
+	const feature = await readFile(
+		join(repoRoot, "features", "verified-tdd-microcycle.feature"),
+		"utf8",
+	);
+
+	assert.match(
+		feature,
+		/not connected to the slice changes by code or behavior/,
+	);
+	assert.match(feature, /allows the final cleanup and commit to continue/);
+	assert.match(feature, /reports the failure as a watch item for the user/);
+});
+
+// @covers @scenario-ambiguous-suite-failures-become-follow-up-questions
+test("Ambiguous final verification failures become follow-up questions", async () => {
+	const feature = await readFile(
+		join(repoRoot, "features", "verified-tdd-microcycle.feature"),
+		"utf8",
+	);
+
+	assert.match(feature, /cannot be classified as connected or unrelated/);
+	assert.match(
+		feature,
+		/stores the unresolved item as a follow-up question for the user/,
+	);
+	assert.match(
+		feature,
+		/final cleanup waits for the user or a side investigation/,
 	);
 });
 
@@ -1240,9 +1280,15 @@ test("Final verification runs all unit tests before the final green commit", asy
 	assert.match(finalVerifyStep, /all unit tests/);
 	assert.match(finalVerifyStep, /before the final commit/i);
 	assert.match(
-		prompt,
-		/Do not create the final slice commit until all configured validation commands, including the all-unit-test command, pass/,
+		finalVerifyStep,
+		/Retry wider-suite failures before classification/,
 	);
+	assert.match(
+		prompt,
+		/Do not create the final slice commit until the focused behavior test passes and every configured validation command, including the all-unit-test command, has passed or any wider-suite failure has been retried and classified with evidence as pre-existing or unrelated/,
+	);
+	assert.match(prompt, /Do not ignore connected wider-suite failures/);
+	assert.match(prompt, /Do not silently accept ambiguous wider-suite failures/);
 });
 
 test("/forge routes phase agents through smart-model-run profiles", async (t) => {
@@ -1351,6 +1397,8 @@ test("readers see the verified TDD micro-cycle feature spec at the public starti
 		"Final verification runs full suites after all items finish",
 		"Missing end-to-end suite is skipped with evidence",
 		"Final verification investigates suite failures before cleanup commit",
+		"Unrelated final verification failures are reported without blocking the slice",
+		"Ambiguous final verification failures become follow-up questions",
 		"The final commit is anchored to the recorded start hash",
 	]);
 });
@@ -1383,6 +1431,7 @@ test("Forge phase contracts are available as bundled Pi agents", async () => {
 			/temporary red/i,
 			/all configured validation commands/i,
 			/all unit tests/i,
+			/retried wider-suite failures/i,
 		],
 	};
 	const agentsDir = join(repoRoot, "agents");

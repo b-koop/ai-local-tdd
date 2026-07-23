@@ -215,7 +215,8 @@ Recovery:
 ### Milestone checks gate
 
 Purpose: catch integration regressions without running expensive checks after
-every edit.
+every edit, while preventing unrelated or flaky wider-suite failures from
+blocking slice development indefinitely.
 
 Passes when:
 
@@ -223,17 +224,29 @@ Passes when:
   completion
 - final completion includes every configured validation command, including the
   all-unit-test command, before the final commit is created
+- any wider-suite failure is retried and classified with evidence as
+  pre-existing, unrelated to the slice by code and behavior, or ambiguous and
+  captured as a follow-up question
 
 Fails when:
 
-- any milestone/full command fails
+- a focused command fails
+- a retried milestone/full failure is plausibly connected to the slice's changed
+  files, changed behavior, or shared logic
+- a wider-suite failure cannot be classified and no follow-up question or user
+  routing is recorded
 - final completion skips the all-unit-test command or runs it only after commit
   creation
 
 Recovery:
 
-- stop the milestone and route the failure to the appropriate slice or user
-  review
+- for connected failures, stop the milestone and route the failure to the green
+  or refactor phase until the behavior remains correct and the failure is fixed
+- for unrelated or pre-existing failures, record the failing command, failing
+  test names, excerpts, retry result, and why the slice is unlikely to be the
+  cause; continue with the failure listed as a watch item
+- for ambiguous failures, store a follow-up question for the user or start a
+  near-final side investigation before final cleanup continues
 
 ### Final ancestry gate
 
@@ -245,7 +258,8 @@ Passes when:
 - the final commit is conventional
 - the final commit diff includes the verified test and green implementation
 - pre-commit final verification evidence shows all configured validation
-  commands, including all unit tests, passed
+  commands, including all unit tests, passed or produced only retried failures
+  classified as pre-existing or unrelated
 
 Fails when:
 
@@ -261,6 +275,7 @@ Recovery:
 
 - Red gets 5 attempts with the same red agent.
 - Failed independent slices may be skipped while non-dependent slices continue.
-- Failed blocker slices can be retried when they are the only blocker or only remaining work.
+- Failed blocker slices can be retried when they are the only blocker or only
+  remaining work.
 - Retry wave uses new agents for 5 more attempts.
 - After retry exhaustion, Forge stops and reports the failure to the user.

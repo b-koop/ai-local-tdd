@@ -142,7 +142,8 @@ export async function runForgePhaseInSandbox(request: ForgeProcessorRequest): Pr
     const packagePath = quote(mountedPackageSource);
     const cliPath = join(mountedPackageSource, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js");
     const extensionPath = join(mountedPackageSource, "dist", "extensions", "forge.js");
-    const promptCommand = `--no-session -p "$(cat /tmp/forge-prompt.txt)"`;
+    const workerModel = process.env.PI_FORGE_WORKER_MODEL ?? "openai-codex/gpt-5.5";
+    const promptCommand = `--model ${quote(workerModel)} --no-session -p "$(cat /tmp/forge-prompt.txt)"`;
     const configEnv = `PI_CODING_AGENT_DIR=${quote(agentDir)}`;
     const cliShellPath = quote(cliPath);
     const extensionShellPath = quote(extensionPath);

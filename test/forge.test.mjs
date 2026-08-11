@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import test from "node:test";
 
 import registerForgeExtension from "../dist/extensions/forge.js";
@@ -13,6 +15,7 @@ import {
 } from "../dist/src/forge-config.js";
 
 const repoRoot = new URL("..", import.meta.url).pathname;
+const execFileAsync = promisify(execFile);
 
 // Keep the suite hermetic: point Forge at a temp global settings file so tests
 // never read the developer's real ~/.pi/agent/settings.json. Individual tests
@@ -278,6 +281,40 @@ async function invokeForge(
 	};
 }
 
+test("Forge announces its package version when a session starts", async () => {
+	const manifest = parseJsonFixture(
+		await readFile(join(repoRoot, "package.json"), "utf8"),
+		"package manifest",
+	);
+	let sessionStart;
+	const notifications = [];
+	const pi = {
+		on(name, handler) {
+			if (name === "session_start") sessionStart = handler;
+		},
+		registerCommand() {},
+	};
+
+	registerForgeExtension(pi);
+	assert.equal(typeof sessionStart, "function");
+	sessionStart({}, {
+		ui: {
+			notify(message, level) {
+				notifications.push({ message, level });
+			},
+			setStatus() {},
+		},
+	});
+
+	assert.ok(
+		notifications.some(
+			({ message, level }) =>
+				level === "info" && /Forge/i.test(message) && message.includes(manifest.version),
+		),
+		`expected a Forge startup notification containing version ${manifest.version}`,
+	);
+});
+
 test("/tdd is an alias for the forge command", async (t) => {
 	const { sentMessages, notifications } = await invokeForge(t, {
 		commandName: "tdd",
@@ -351,6 +388,44 @@ test("/forge falls back to current branch evidence and preserves lookup failures
 	assert.match(sentMessages[0], /Run Forge for: current branch/);
 	assert.match(sentMessages[0], /Linear branch issue id \(error\)/);
 	assert.match(sentMessages[0], /GitHub current-branch PR \(error\)/);
+});
+
+test("/forge reports sandbox clone failures without crashing in a git worktree", async (t) => {
+	const worktree = join(tmpdir(), `forge-worktree-${Date.now()}-${Math.random()}`);
+	await execFileAsync("git", ["worktree", "add", "--detach", worktree, "HEAD"], {
+		cwd: repoRoot,
+	});
+	t.after(() => execFileAsync("git", ["worktree", "remove", "--force", worktree], { cwd: repoRoot }));
+
+	const sbxDir = join(tmpdir(), `forge-sbx-${Date.now()}-${Math.random()}`);
+	await mkdir(sbxDir, { recursive: true });
+	await writeFile(
+		join(sbxDir, "sbx"),
+		`#!/usr/bin/env node
+if (process.argv[2] === "--help") process.exit(0);
+if (process.argv[2] === "create") {
+	process.stderr.write("--clone is not supported in git worktree\\n");
+	process.exit(1);
+}
+`,
+		{ mode: 0o755 },
+	);
+	const oldPath = process.env.PATH;
+	process.env.PATH = `${sbxDir}:${oldPath ?? ""}`;
+	t.after(async () => {
+		process.env.PATH = oldPath;
+		await rm(sbxDir, { recursive: true, force: true });
+	});
+
+	const { sentMessages, notifications } = await invokeForge(t, { cwd: worktree, input: "ABC-123" });
+	assert.equal(sentMessages.length, 1);
+	assert.match(sentMessages[0], /Run Forge for: ABC-123/);
+	assert.ok(
+		notifications.some(
+			({ level, message }) =>
+				level === "warning" && /sandbox cloning.*git worktree/i.test(message),
+		),
+	);
 });
 
 // @covers @scenario-forge-sends-the-orchestration-prompt-immediately-in-an-idle-session
@@ -459,6 +534,29 @@ test("/specmap defaults to the features folder and prepares trace tagging", asyn
 });
 
 // @covers @scenario-forge-keeps-the-user-s-context-after-the-ticket-selector
+test("/forge accepts file paths and arbitrary context in the orchestration prompt", async (t) => {
+	const filesDir = join(tmpdir(), `forge-files-${Date.now()}-${Math.random()}`);
+	await mkdir(filesDir, { recursive: true });
+	const firstFile = join(filesDir, "requirements.md");
+	const secondFile = join(filesDir, "notes.txt");
+	await Promise.all([
+		writeFile(firstFile, "Requirement: preserve the import boundary"),
+		writeFile(secondFile, "Note: verify the retry behavior"),
+	]);
+	t.after(() => rm(filesDir, { recursive: true, force: true }));
+
+	const { sentMessages } = await invokeForge(t, {
+		commandName: "tdd",
+		input: `--file ${firstFile} --file ${secondFile} ABC-123 focus on the safest smallest change`,
+	});
+
+	assert.equal(sentMessages.length, 1);
+	const prompt = sentMessages[0];
+	assert.match(prompt, /focus on the safest smallest change/);
+	assert.match(prompt, /Requirement: preserve the import boundary/);
+	assert.match(prompt, /Note: verify the retry behavior/);
+});
+
 test("/forge keeps the user's context after the ticket selector", async () => {
 	let forgeHandler;
 	const sentMessages = [];

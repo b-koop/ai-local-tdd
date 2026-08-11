@@ -1,7 +1,7 @@
 {
   "name": "@ai-local/tdd",
-  "version": "0.2.0",
-  "description": "Pi package that adds the /tdd ticket-driven TDD orchestration command.",
+  "version": "0.3.8",
+  "description": "Pi package that adds the /forge red-green orchestration command.",
   "type": "module",
   "keywords": [
     "pi-package",

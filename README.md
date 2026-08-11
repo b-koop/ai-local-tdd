@@ -98,10 +98,14 @@ Example:
 /tdd ABC-123 --local implement user authentication flow
 ```
 
-### `/tdd [ticket|issue|pr|url]`
+### `/forge [ticket|issue|pr|url]`
 
-Starts a ticket-driven TDD orchestration prompt. The first token is treated as
-the selector; remaining text is preserved as additional user context.
+Starts the Forge orchestration. Repeat `--file <path>` to attach local files and
+keep any remaining text as free-form context. Forge first creates an ordered TODO
+list, then executes one item at a time through red, verify-red, green, and final
+validation. Supplied files are included as untrusted context data.
+
+`/tdd` remains a compatibility alias for the same orchestration prompt.
 
 Selectors that start with `-` are rejected before any external lookup command is
 called. This prevents user input such as `--help` from being passed to `gh` or
@@ -269,7 +273,9 @@ to `smart-model-run`, starting with `ollama/ornith:35b` before lower fallbacks.
 
 ## Settings
 
-Forge reads an optional `forge` section from Pi settings.
+Forge reads an optional `forge` section from Pi settings. Configure this in the
+user-global settings file to make the Forge defaults apply across repositories;
+project settings only override it after the project is trusted.
 
 - Global settings: `~/.pi/agent/settings.json`, read whenever present.
 - Project settings: `.pi/settings.json`, read only when the project is trusted;

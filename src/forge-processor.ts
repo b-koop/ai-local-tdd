@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -105,14 +105,9 @@ export async function runForgePhaseInSandbox(request: ForgeProcessorRequest): Pr
     const sandboxStartupTimeoutMs = Math.max(timeoutMs, 600_000);
     const stagedClone = cloneSource.startsWith(outputDir);
     sandboxName = `forge-${basename(outputDir)}`;
-    const packageIsNestedInClone = isAbsolute(request.packageSource) && existsSync(request.packageSource)
-      && request.packageSource !== originalCloneSource
-      && (!relative(originalCloneSource, request.packageSource).startsWith("..")
-        || !relative(request.cwd, request.packageSource).startsWith(".."));
-    // A package mount nested inside the clone mount is otherwise shadowed by
-    // the clone. Put a symlink outside the clone root so the runtime can mount
-    // and address the package independently.
-    const packageAlias = packageIsNestedInClone && !sameRepository
+    // Mount external package sources through a temporary path outside the
+    // cloned workspace so sandbox path shadowing cannot hide them.
+    const packageAlias = !sameRepository && isAbsolute(request.packageSource) && existsSync(request.packageSource)
       ? join(outputDir, "package-source")
       : undefined;
     if (packageAlias) await symlink(request.packageSource, packageAlias, "dir");
@@ -172,8 +167,12 @@ export async function runForgePhaseInSandbox(request: ForgeProcessorRequest): Pr
     const stderr = typeof (error as { stderr?: unknown }).stderr === "string"
       ? String((error as { stderr: string }).stderr).trim()
       : "";
+    const stdout = typeof (error as { stdout?: unknown }).stdout === "string"
+      ? String((error as { stdout: string }).stdout).trim()
+      : "";
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(stderr ? `${message}\n${stderr}` : message, { cause: error });
+    const details = [stderr, stdout].filter(Boolean).join("\n");
+    throw new Error(details ? `${message}\n${details}` : message, { cause: error });
   } finally {
     const cleanupTarget = sandbox || sandboxName;
     if (cleanupTarget) { try { await execFileAsync("sbx", ["rm", cleanupTarget], { cwd: sandboxCwd, timeout: timeoutMs }); } catch {} }

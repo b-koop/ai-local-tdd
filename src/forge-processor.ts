@@ -62,7 +62,7 @@ export async function runForgePhaseInSandbox(request: ForgeProcessorRequest): Pr
     const before = await execFileAsync("sbx", ["exec", "-it", sandbox, "bash", "-lc", "git rev-parse HEAD"], { cwd: request.cwd, timeout: timeoutMs });
     const script = `pi install ${quote(request.packageSource)} && pi -p "$(cat /tmp/forge-prompt.txt)"`;
     const worker = await execFileAsync("sbx", ["exec", "-it", sandbox, "bash", "-lc", script], { cwd: request.cwd, timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024 });
-    const after = await execFileAsync("sbx", ["exec", "-it", sandbox, "bash", "-lc", "git rev-parse HEAD"]);
+    const after = await execFileAsync("sbx", ["exec", "-it", sandbox, "bash", "-lc", "git rev-parse HEAD"], { cwd: request.cwd, timeout: timeoutMs });
     const changed = await execFileAsync("sbx", ["exec", "-it", sandbox, "bash", "-lc", "git diff --name-only"], { cwd: request.cwd, timeout: timeoutMs });
     const patch = await execFileAsync("sbx", ["exec", "-it", sandbox, "bash", "-lc", "git diff"], { cwd: request.cwd, timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024 });
     await writeFile(patchPath, String(patch.stdout), "utf8");

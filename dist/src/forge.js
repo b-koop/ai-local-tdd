@@ -627,6 +627,15 @@ export async function runForgeOrchestration(request, cwd = process.cwd()) {
     }
     return { red, verifyRed, green };
 }
+async function sandboxCliAvailable(cwd) {
+    try {
+        await execFileAsync("sbx", ["--help"], { cwd, timeout: 5_000, maxBuffer: 1_000_000 });
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
 function renderStatus(status) {
     if (!status)
         return "forge idle";
@@ -712,6 +721,11 @@ export default function (pi) {
             }
             if (!ctx.isIdle()) {
                 ctx.ui.notify("/forge is already running; wait for the current processor to finish", "warning");
+                return;
+            }
+            if (!(await sandboxCliAvailable(ctx.cwd))) {
+                ctx.ui.notify("/forge sandbox CLI unavailable; using the legacy prompt path", "warning");
+                await commandFor("standard", "forge").handler(args, ctx);
                 return;
             }
             ctx.ui.notify(`/forge starting sandbox processor for ${target}`, "info");

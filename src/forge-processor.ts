@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -32,6 +32,15 @@ export type ForgeProcessorResult = {
 
 function quote(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
+async function gitRepositoryIdentity(cwd: string): Promise<string | undefined> {
+  try {
+    const { stdout } = await execFileAsync("git", ["rev-parse", "--git-path", "objects"], { cwd, timeout: 10_000 });
+    return await realpath(resolve(cwd, String(stdout).trim()));
+  } catch {
+    return undefined;
+  }
 }
 
 export async function sandboxCloneSource(cwd: string): Promise<string> {
@@ -83,13 +92,14 @@ export async function runForgePhaseInSandbox(request: ForgeProcessorRequest): Pr
   let sandboxCwd = request.cwd;
   try {
     const originalCloneSource = await sandboxCloneSource(request.cwd);
+    const originalRepositoryIdentity = await gitRepositoryIdentity(request.cwd);
     const cloneSource = await prepareSandboxCloneSource(request.cwd, outputDir);
     sandboxCwd = cloneSource;
-    const packageSourceRepository = isAbsolute(request.packageSource) && existsSync(request.packageSource)
-      ? await sandboxCloneSource(request.packageSource)
+    const packageRepositoryIdentity = isAbsolute(request.packageSource) && existsSync(request.packageSource)
+      ? await gitRepositoryIdentity(request.packageSource)
       : undefined;
-    const sameRepository = packageSourceRepository !== undefined
-      && packageSourceRepository === originalCloneSource;
+    const sameRepository = packageRepositoryIdentity !== undefined
+      && packageRepositoryIdentity === originalRepositoryIdentity;
     // Creating a container and cloning a large repository can exceed the
     // focused test command timeout; keep sandbox startup independently generous.
     const sandboxStartupTimeoutMs = Math.max(timeoutMs, 600_000);

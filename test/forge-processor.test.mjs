@@ -72,10 +72,15 @@ else if (args[0] === "exec") {
 });
 
 
-test("runForgePhaseInSandbox uses the cloned workspace when the package is the target repository", async (t) => {
+test("runForgePhaseInSandbox keeps a package from another worktree in the cloned workspace", async (t) => {
 	const worktree = join(tmpdir(), `forge-processor-same-package-${Date.now()}-${Math.random()}`);
+	const packageWorktree = join(tmpdir(), `forge-processor-same-package-source-${Date.now()}-${Math.random()}`);
 	await execFileAsync("git", ["worktree", "add", "--detach", worktree, "HEAD"], { cwd: repoRoot });
-	t.after(() => execFileAsync("git", ["worktree", "remove", "--force", worktree], { cwd: repoRoot }));
+	await execFileAsync("git", ["worktree", "add", "--detach", packageWorktree, "HEAD"], { cwd: repoRoot });
+	t.after(async () => {
+		await execFileAsync("git", ["worktree", "remove", "--force", worktree], { cwd: repoRoot });
+		await execFileAsync("git", ["worktree", "remove", "--force", packageWorktree], { cwd: repoRoot });
+	});
 	const binDir = join(tmpdir(), `forge-processor-same-package-sbx-${Date.now()}-${Math.random()}`);
 	await mkdir(binDir, { recursive: true });
 	const callsPath = join(binDir, "calls.jsonl");
@@ -95,10 +100,11 @@ else if (args[0] === "exec") {
 	const oldPath = process.env.PATH;
 	process.env.PATH = `${binDir}:${oldPath ?? ""}`;
 	t.after(async () => { process.env.PATH = oldPath; await rm(binDir, { recursive: true, force: true }); });
-	await runForgePhaseInSandbox({ phase: "red", cwd: worktree, prompt: "prompt", allowedPaths: [], focusedCommand: "test", packageSource: repoRoot, timeoutMs: 5_000 });
+	await runForgePhaseInSandbox({ phase: "red", cwd: worktree, prompt: "prompt", allowedPaths: [], focusedCommand: "test", packageSource: packageWorktree, timeoutMs: 5_000 });
 	const calls = (await readFile(callsPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
 	const createCall = calls.find(({ args }) => args[0] === "create");
 	assert.deepEqual(createCall.args.slice(3), ["--clone", "shell", repoRoot.replace(/\/$/, "")]);
+	assert.ok(!createCall.args.some((arg) => arg.endsWith(":ro")));
 	const workerCall = calls.find(({ args }) => args[0] === "exec" && args.at(-1).includes("FORGE_PHASE_RESULT") === false && args.at(-1).includes("git rev-parse HEAD") === false && args.at(-1).includes("git diff") === false);
 	assert.match(workerCall.args.at(-1), /pi install '?\.'?|node '?\.\/node_modules/);
 	assert.match(workerCall.args.at(-1), /dist\/extensions\/forge\.js/);

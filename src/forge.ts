@@ -25,7 +25,7 @@ import {
 import { runForgePhaseInSandbox, type ForgeProcessorResult } from "./forge-processor.js";
 
 const execFileAsync = promisify(execFile);
-export const FORGE_VERSION = "0.3.10";
+export const FORGE_VERSION = "0.3.11";
 
 const GH_PR_FIELDS = [
 	"number",

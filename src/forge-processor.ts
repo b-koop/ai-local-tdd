@@ -107,14 +107,12 @@ export async function runForgePhaseInSandbox(request: ForgeProcessorRequest): Pr
     sandboxName = `forge-${basename(outputDir)}`;
     // Mount external package sources through a temporary path outside the
     // cloned workspace so sandbox path shadowing cannot hide them.
-    const packageAlias = !sameRepository && isAbsolute(request.packageSource) && existsSync(request.packageSource)
+    const packageAlias = isAbsolute(request.packageSource) && existsSync(request.packageSource)
       ? join(outputDir, "package-source")
       : undefined;
     if (packageAlias) await symlink(request.packageSource, packageAlias, "dir");
     const mountedPackageSource = packageAlias ?? request.packageSource;
-    const packageMount = isAbsolute(request.packageSource) && existsSync(request.packageSource) && !sameRepository
-      ? `${mountedPackageSource}:ro`
-      : undefined;
+    const packageMount = packageAlias ? `${mountedPackageSource}:ro` : undefined;
     const hostAgentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
     let agentDir = hostAgentDir;
     if (stagedClone && existsSync(hostAgentDir)) {
@@ -141,15 +139,13 @@ export async function runForgePhaseInSandbox(request: ForgeProcessorRequest): Pr
       await execFileAsync("sbx", ["exec", "-it", sandbox, "bash", "-lc", "git apply /tmp/forge-input.patch"], { cwd: sandboxCwd, timeout: timeoutMs });
     }
     const before = await execFileAsync("sbx", ["exec", "-it", sandbox, "bash", "-lc", "git rev-parse HEAD"], { cwd: sandboxCwd, timeout: timeoutMs });
-    const packagePath = sameRepository ? "." : quote(mountedPackageSource);
-    const cliPath = sameRepository
-      ? "./node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
-      : join(mountedPackageSource, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js");
-    const extensionPath = sameRepository ? "./dist/extensions/forge.js" : join(mountedPackageSource, "dist", "extensions", "forge.js");
+    const packagePath = quote(mountedPackageSource);
+    const cliPath = join(mountedPackageSource, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js");
+    const extensionPath = join(mountedPackageSource, "dist", "extensions", "forge.js");
     const promptCommand = `--no-session -p "$(cat /tmp/forge-prompt.txt)"`;
     const configEnv = `PI_CODING_AGENT_DIR=${quote(agentDir)}`;
-    const cliShellPath = sameRepository ? cliPath : quote(cliPath);
-    const extensionShellPath = sameRepository ? extensionPath : quote(extensionPath);
+    const cliShellPath = quote(cliPath);
+    const extensionShellPath = quote(extensionPath);
     const script = `if [ -f ${cliShellPath} ]; then ${configEnv} node ${cliShellPath} -e ${extensionShellPath} ${promptCommand}; elif command -v pi >/dev/null 2>&1; then ${configEnv} pi install ${packagePath} && ${configEnv} pi ${promptCommand}; else echo "Forge worker CLI is unavailable in the sandbox" >&2; exit 127; fi`;
     const worker = await execFileAsync("sbx", ["exec", "-it", sandbox, "bash", "-lc", script], { cwd: sandboxCwd, timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024 });
     const after = await execFileAsync("sbx", ["exec", "-it", sandbox, "bash", "-lc", "git rev-parse HEAD"], { cwd: sandboxCwd, timeout: timeoutMs });

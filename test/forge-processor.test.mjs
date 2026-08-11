@@ -103,10 +103,12 @@ else if (args[0] === "exec") {
 	await runForgePhaseInSandbox({ phase: "red", cwd: worktree, prompt: "prompt", allowedPaths: [], focusedCommand: "test", packageSource: packageWorktree, timeoutMs: 5_000 });
 	const calls = (await readFile(callsPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
 	const createCall = calls.find(({ args }) => args[0] === "create");
-	assert.deepEqual(createCall.args.slice(3), ["--clone", "shell", repoRoot.replace(/\/$/, "")]);
-	assert.ok(!createCall.args.some((arg) => arg.endsWith(":ro")));
+	assert.deepEqual(createCall.args.slice(3, 6), ["--clone", "shell", repoRoot.replace(/\/$/, "")]);
+	const packageMount = createCall.args.find((arg) => arg.endsWith(":ro"));
+	assert.ok(packageMount);
+	assert.notEqual(packageMount.slice(0, -3), packageWorktree);
 	const workerCall = calls.find(({ args }) => args[0] === "exec" && args.at(-1).includes("FORGE_PHASE_RESULT") === false && args.at(-1).includes("git rev-parse HEAD") === false && args.at(-1).includes("git diff") === false);
-	assert.match(workerCall.args.at(-1), /pi install '?\.'?|node '?\.\/node_modules/);
+	assert.match(workerCall.args.at(-1), /node .*package-source.*pi-coding-agent/);
 	assert.match(workerCall.args.at(-1), /dist\/extensions\/forge\.js/);
 });
 
@@ -205,8 +207,8 @@ else if (args[0] === "exec") {
 	const workerCall = calls.find(({ args }) => args[0] === "exec" && args.at(-1)?.includes("FORGE_PHASE_RESULT") === false && args.at(-1)?.includes("pi install"));
 	assert.ok(workerCall);
 	const workerCommand = workerCall.args.at(-1);
-	assert.ok(workerCommand.includes("pi install ."));
-	assert.ok(workerCommand.includes("node ./node_modules/@earendil-works/pi-coding-agent/dist/cli.js"));
-	assert.ok(workerCommand.includes("-e ./dist/extensions/forge.js"));
+	assert.ok(workerCommand.includes("package-source"));
+	assert.match(workerCommand, /node '[^']*package-source\/node_modules\/@earendil-works\/pi-coding-agent\/dist\/cli\.js'/);
+	assert.match(workerCommand, /-e '[^']*package-source\/dist\/extensions\/forge\.js'/);
 	assert.ok(!workerCommand.includes(bareRepo));
 });

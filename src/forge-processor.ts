@@ -136,9 +136,9 @@ export async function runForgePhaseInSandbox(request: ForgeProcessorRequest): Pr
       const inputPath = join(outputDir, "input.patch");
       await writeFile(inputPath, request.inputPatch, "utf8");
       await execFileAsync("sbx", ["cp", inputPath, `${sandbox}:/tmp/forge-input.patch`], { cwd: sandboxCwd, timeout: timeoutMs });
-      await execFileAsync("sbx", ["exec", "-it", sandbox, "bash", "-lc", "git apply /tmp/forge-input.patch"], { cwd: sandboxCwd, timeout: timeoutMs });
+      await execFileAsync("sbx", ["exec", "-i", sandbox, "bash", "-lc", "git apply /tmp/forge-input.patch"], { cwd: sandboxCwd, timeout: timeoutMs });
     }
-    const before = await execFileAsync("sbx", ["exec", "-it", sandbox, "bash", "-lc", "git rev-parse HEAD"], { cwd: sandboxCwd, timeout: timeoutMs });
+    const before = await execFileAsync("sbx", ["exec", "-i", sandbox, "bash", "-lc", "git rev-parse HEAD"], { cwd: sandboxCwd, timeout: timeoutMs });
     const packagePath = quote(mountedPackageSource);
     const cliPath = join(mountedPackageSource, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js");
     const extensionPath = join(mountedPackageSource, "dist", "extensions", "forge.js");
@@ -147,10 +147,10 @@ export async function runForgePhaseInSandbox(request: ForgeProcessorRequest): Pr
     const cliShellPath = quote(cliPath);
     const extensionShellPath = quote(extensionPath);
     const script = `if [ -f ${cliShellPath} ]; then ${configEnv} node ${cliShellPath} -e ${extensionShellPath} ${promptCommand}; elif command -v pi >/dev/null 2>&1; then ${configEnv} pi install ${packagePath} && ${configEnv} pi ${promptCommand}; else echo "Forge worker CLI is unavailable in the sandbox" >&2; exit 127; fi`;
-    const worker = await execFileAsync("sbx", ["exec", "-it", sandbox, "bash", "-lc", script], { cwd: sandboxCwd, timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024 });
-    const after = await execFileAsync("sbx", ["exec", "-it", sandbox, "bash", "-lc", "git rev-parse HEAD"], { cwd: sandboxCwd, timeout: timeoutMs });
-    const changed = await execFileAsync("sbx", ["exec", "-it", sandbox, "bash", "-lc", "git diff --name-only"], { cwd: sandboxCwd, timeout: timeoutMs });
-    const patch = await execFileAsync("sbx", ["exec", "-it", sandbox, "bash", "-lc", "git diff"], { cwd: sandboxCwd, timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024 });
+    const worker = await execFileAsync("sbx", ["exec", "-i", sandbox, "bash", "-lc", script], { cwd: sandboxCwd, timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024 });
+    const after = await execFileAsync("sbx", ["exec", "-i", sandbox, "bash", "-lc", "git rev-parse HEAD"], { cwd: sandboxCwd, timeout: timeoutMs });
+    const changed = await execFileAsync("sbx", ["exec", "-i", sandbox, "bash", "-lc", "git diff --name-only"], { cwd: sandboxCwd, timeout: timeoutMs });
+    const patch = await execFileAsync("sbx", ["exec", "-i", sandbox, "bash", "-lc", "git diff"], { cwd: sandboxCwd, timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024 });
     await writeFile(patchPath, String(patch.stdout), "utf8");
     const result = parseResult(`${worker.stdout}\n${worker.stderr}`, request.phase);
     result.changedFiles = String(changed.stdout).trim().split(/\n/).filter(Boolean);

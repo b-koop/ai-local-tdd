@@ -1,7 +1,8 @@
 # Pi Forge Command
 
-`the-forge` is a local Pi package that adds `/tdd`: a ticket-driven
-TDD orchestration command for running one behavior slice at a time with explicit
+`the-forge` is a local Pi package that adds `/forge`: a sandboxed
+red/verify-red/green orchestration command. `/tdd` remains the legacy
+ticket-driven TDD prompt command for running one behavior slice at a time with explicit
 git checks, phase-specific agents, and prompt-injection boundaries around ticket
 text. It also adds `/rolling` for larger work that should be narrowed just in
 time with a fresh agent context for each ready item.
@@ -14,9 +15,9 @@ run-artifact proposals, and programmatic TDD instructions.
 ## What Forge does
 
 Forge turns a ticket, issue, pull request, URL, or current-branch context into a
-strict orchestration prompt for Pi. The extension itself gathers context and
-constructs the prompt; the receiving agent is then required to follow the Forge
-loop contract.
+structured run request, then executes phase workers in isolated sandbox clones.
+The parent validates file scope and git state, applies the verified red and green
+patches automatically, and runs configured validation commands before continuing.
 
 At a high level, a Forge run:
 
@@ -27,8 +28,9 @@ At a high level, a Forge run:
    bundled local defaults without an install prompt;
 4. gathers git context and available Linear/GitHub ticket evidence;
 5. wraps external ticket text in an explicit untrusted-data boundary;
-6. sends or queues a prompt that requires ticket-driven red/green/refactor work,
-   deterministic git checks, and one final commit per behavior slice.
+6. runs isolated red, verify-red, and green processors, returning compact phase
+   summaries rather than forwarding worker transcripts;
+7. applies accepted patches and runs the configured validation commands.
 
 Forge is intentionally conservative: code-owned checks such as git status, file
 boundaries, command exit codes, and commit ancestry cannot be overridden by AI
@@ -96,10 +98,14 @@ Example:
 /tdd ABC-123 --local implement user authentication flow
 ```
 
-### `/tdd [ticket|issue|pr|url]`
+### `/forge [ticket|issue|pr|url]`
 
-Starts a ticket-driven TDD orchestration prompt. The first token is treated as
-the selector; remaining text is preserved as additional user context.
+Starts the Forge orchestration. Repeat `--file <path>` to attach local files and
+keep any remaining text as free-form context. Forge first creates an ordered TODO
+list, then executes one item at a time through red, verify-red, green, and final
+validation. Supplied files are included as untrusted context data.
+
+`/tdd` remains a compatibility alias for the same orchestration prompt.
 
 Selectors that start with `-` are rejected before any external lookup command is
 called. This prevents user input such as `--help` from being passed to `gh` or
@@ -267,7 +273,9 @@ to `smart-model-run`, starting with `ollama/ornith:35b` before lower fallbacks.
 
 ## Settings
 
-Forge reads an optional `forge` section from Pi settings.
+Forge reads an optional `forge` section from Pi settings. Configure this in the
+user-global settings file to make the Forge defaults apply across repositories;
+project settings only override it after the project is trusted.
 
 - Global settings: `~/.pi/agent/settings.json`, read whenever present.
 - Project settings: `.pi/settings.json`, read only when the project is trusted;

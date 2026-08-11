@@ -1,6 +1,6 @@
 # Forge design decisions
 
-Status: accepted planning decisions, not implemented.
+Status: accepted implementation decisions for the Forge runtime rewrite.
 Audience: contributors and design reviewers.
 Applies to: intended v1 behavior unless a section says otherwise.
 
@@ -8,7 +8,8 @@ Applies to: intended v1 behavior unless a section says otherwise.
 
 In:
 
-- direct current worktree
+- parent-controlled current worktree for accepted patches
+- isolated `sbx --clone` phase processors
 - clean-start gate before any AI call
 - `.tmp/.forge/runs/<slug>/` generated run artifacts
 - JSON state plus Markdown notes plus generated behavior feature
@@ -20,11 +21,18 @@ In:
 
 Out:
 
-- isolated worktrees
+- native git worktrees as a later processor option
 - cleanup agents that edit code or tests
 - automatic handling for every recovery path
 - docs/wiki publishing automation
 - npm publishing
+
+## Processor boundary
+
+Forge workers run in fresh sandbox clone contexts. Each worker returns one
+`FORGE_PHASE_RESULT` JSON marker containing the phase verdict, test evidence,
+changed files, scope result, and compact parent digest. The parent owns patch
+application, validation, retries, and progression.
 
 ## Start gate
 

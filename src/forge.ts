@@ -948,7 +948,7 @@ Hard boundaries:
 }
 
 export async function runForgeOrchestration(request: ForgeRunRequest, cwd = process.cwd()): Promise<{ red: ForgeProcessorResult; verifyRed: ForgeProcessorResult; green: ForgeProcessorResult }> {
-	const packageSource = process.env.PI_FORGE_PACKAGE_SOURCE ?? cwd;
+	const packageSource = process.env.PI_FORGE_PACKAGE_SOURCE ?? join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 	const focusedCommand = request.settings.testCommands[0] ?? "pnpm test";
 	const common = { cwd, packageSource, focusedCommand, timeoutMs: request.settings.timeoutMs };
 	const red = await runForgePhaseInSandbox({ ...common, phase: "red", prompt: phasePrompt(request, "red"), allowedPaths: ["test", "features"] });

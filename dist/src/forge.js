@@ -1,14 +1,12 @@
 import { execFile } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { getAgentDir, } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_LOCAL_FALLBACK_SELECTORS, } from "smart-model-run";
 import { DEFAULT_COMMAND_TIMEOUT_MS, DEFAULT_FORGE_SETTINGS, mergeForgeSettingsWithWarnings, } from "./forge-config.js";
-import { runForgePhaseInSandbox } from "./forge-processor.js";
 const execFileAsync = promisify(execFile);
 const GH_PR_FIELDS = [
     "number",
@@ -538,104 +536,6 @@ Final report must include:
 - Missing or ambiguous scenario coverage.
 - Recommended next ready items for \`/rolling\`.`;
 }
-function parseGitSnapshot(gitContext) {
-    const value = (label) => {
-        const line = gitContext.split("\n").find((item) => item.startsWith(`${label}:`));
-        if (!line)
-            return null;
-        const result = line.slice(label.length + 1).trim();
-        return !result || result.startsWith("<unavailable>") ? null : result;
-    };
-    return {
-        workingTree: value("Working tree") ?? "<unavailable>",
-        branch: value("Current branch"),
-        headSha: value("Head commit"),
-        upstream: value("Upstream"),
-    };
-}
-export function buildForgeRunRequest(parsed, gitContext, lookups, settings, agentAvailability, settingsWarnings = [], mode = "standard") {
-    const phaseProfiles = Object.entries(FORGE_SMART_MODEL_PROFILES).map(([phase, profile]) => ({
-        phase,
-        agent: profile.agent,
-        budget: profile.budget,
-        ceiling: profile.ceiling,
-        thinking: profile.thinking,
-        needs: profile.needs,
-        tools: profile.tools,
-        requiresExplicitApproval: !parsed.localOnly && phase === "green",
-    }));
-    return {
-        target: parsed.selector || "current branch",
-        selector: parsed.selector,
-        userContext: parsed.userContext,
-        localOnly: parsed.localOnly,
-        git: parseGitSnapshot(gitContext),
-        gitContext,
-        lookups: lookups.map(({ source, status, detail }) => ({ source, status, detail, trust: "untrusted" })),
-        settings,
-        settingsWarnings,
-        agentAvailability,
-        phaseProfiles,
-        mode,
-    };
-}
-function phasePrompt(request, phase, red, verify) {
-    return `You are Forge ${phase}. Work only on the current behavior slice.
-
-Request packet (trusted orchestration data):
-${JSON.stringify(request, null, 2)}
-
-${red ? `Verified red evidence:
-${JSON.stringify(red.parentDigest, null, 2)}
-` : ""}${verify ? `Verify-red evidence:
-${JSON.stringify(verify.parentDigest, null, 2)}
-` : ""}
-Hard boundaries:
-- ${phase === "red" ? "edit tests/specs only" : phase === "green" ? "edit production code only; never tests" : "read-only verification"}
-- do not commit
-- run the focused command
-- return exactly one line beginning FORGE_PHASE_RESULT: followed by JSON with phase, status, parentDigest, focusedCommand, changedFiles, scopeOk, commitCountDelta, and phase evidence.`;
-}
-export async function runForgeOrchestration(request, cwd = process.cwd()) {
-    const packageSource = process.env.PI_FORGE_PACKAGE_SOURCE ?? cwd;
-    const focusedCommand = request.settings.testCommands[0] ?? "pnpm test";
-    const common = { cwd, packageSource, focusedCommand, timeoutMs: request.settings.timeoutMs };
-    const red = await runForgePhaseInSandbox({ ...common, phase: "red", prompt: phasePrompt(request, "red"), allowedPaths: ["test", "features"] });
-    if (red.status !== "succeeded" || !red.scopeOk || red.commitCountDelta !== 0)
-        throw new Error(`Forge red phase rejected: ${red.parentDigest.summary}`);
-    const verifyRed = await runForgePhaseInSandbox({ ...common, phase: "verifyRed", prompt: phasePrompt(request, "verifyRed", red), allowedPaths: ["test", "features"], inputPatch: red.patch });
-    if (verifyRed.status !== "succeeded" || !verifyRed.scopeOk)
-        throw new Error(`Forge verify-red phase rejected: ${verifyRed.parentDigest.summary}`);
-    const green = await runForgePhaseInSandbox({ ...common, phase: "green", prompt: phasePrompt(request, "green", red, verifyRed), allowedPaths: ["src", "lib", "app", "packages"], inputPatch: red.patch });
-    if (green.status !== "succeeded" || !green.scopeOk || green.commitCountDelta !== 0)
-        throw new Error(`Forge green phase rejected: ${green.parentDigest.summary}`);
-    const applyDir = await mkdtemp(join(tmpdir(), "forge-apply-"));
-    try {
-        const redPatch = join(applyDir, "red.patch");
-        const greenPatch = join(applyDir, "green.patch");
-        await writeFile(redPatch, red.patch, "utf8");
-        await writeFile(greenPatch, green.patch, "utf8");
-        await runForgeCommand("git", ["apply", "--3way", redPatch], cwd, { timeoutMs: request.settings.timeoutMs });
-        await runForgeCommand("git", ["apply", "--3way", greenPatch], cwd, { timeoutMs: request.settings.timeoutMs });
-        for (const command of request.settings.testCommands) {
-            const [program, ...args] = command.trim().split(/\s+/);
-            await runForgeCommand(program, args, cwd, { timeoutMs: request.settings.timeoutMs });
-        }
-    }
-    finally {
-        await import("node:fs/promises").then(({ rm }) => rm(applyDir, { recursive: true, force: true }));
-    }
-    return { red, verifyRed, green };
-}
-async function sandboxCliAvailable(cwd) {
-    try {
-        await execFileAsync("sbx", ["--help"], { cwd, timeout: 5_000, maxBuffer: 1_000_000 });
-        return true;
-    }
-    catch {
-        return false;
-    }
-}
 function renderStatus(status) {
     if (!status)
         return "forge idle";
@@ -710,42 +610,6 @@ export default function (pi) {
             },
         };
     }
-    const newForgeCommand = {
-        description: "Run the sandboxed Forge red/verify-red/green processor and automatically apply each verified slice.",
-        handler: async (args, ctx) => {
-            const parsed = parseArgs(args);
-            const target = parsed.selector || "current branch";
-            if (isDashPrefixedSelector(parsed.selector)) {
-                ctx.ui.notify(`/forge blocked invalid ticket selector: ${parsed.selector}`, "error");
-                return;
-            }
-            if (!ctx.isIdle()) {
-                ctx.ui.notify("/forge is already running; wait for the current processor to finish", "warning");
-                return;
-            }
-            if (!(await sandboxCliAvailable(ctx.cwd))) {
-                ctx.ui.notify("/forge sandbox CLI unavailable; using the legacy prompt path", "warning");
-                await commandFor("standard", "forge").handler(args, ctx);
-                return;
-            }
-            ctx.ui.notify(`/forge starting sandbox processor for ${target}`, "info");
-            const trusted = ctx.isProjectTrusted?.() ?? false;
-            const settingsResult = loadForgeSettingsWithWarnings(ctx.cwd, { projectTrusted: trusted });
-            const [gitContext, lookups, agentAvailability] = await Promise.all([
-                collectGitContext(ctx.cwd, settingsResult.settings),
-                collectTicketLookups(parsed.selector, ctx.cwd, settingsResult.settings),
-                getForgeAgentAvailability(ctx.cwd),
-            ]);
-            const request = buildForgeRunRequest(parsed, gitContext, lookups, settingsResult.settings, agentAvailability, settingsResult.warnings);
-            try {
-                const outcome = await runForgeOrchestration(request, ctx.cwd);
-                ctx.ui.notify(`/forge applied green slice: ${outcome.green.parentDigest.summary}`, "info");
-            }
-            catch (error) {
-                ctx.ui.notify(`/forge blocked: ${error instanceof Error ? error.message : String(error)}`, "error");
-            }
-        },
-    };
     pi.registerCommand("specmap", {
         description: "Map feature scenarios to the lowest useful executable tests before Rolling Forge.",
         handler: async (args, ctx) => {
@@ -768,9 +632,9 @@ export default function (pi) {
             pi.sendUserMessage(prompt);
         },
     });
-    const tddCommand = commandFor("standard", "forge");
-    pi.registerCommand("forge", newForgeCommand);
-    pi.registerCommand("tdd", tddCommand);
+    const forgeCommand = commandFor("standard", "forge");
+    pi.registerCommand("forge", forgeCommand);
+    pi.registerCommand("tdd", forgeCommand);
     pi.registerCommand("rolling", commandFor("rolling", "rolling"));
 }
 //# sourceMappingURL=forge.js.map

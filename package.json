@@ -1,6 +1,6 @@
 {
   "name": "@ai-local/tdd",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Pi package that adds the /tdd ticket-driven TDD orchestration command.",
   "type": "module",
   "keywords": [
@@ -15,9 +15,9 @@
     "url": "git+https://github.com/nivoset/the-forge.git"
   },
   "bugs": {
-    "url": "https://github.com/b-koop/the-forge/issues"
+    "url": "https://github.com/nivoset/the-forge/issues"
   },
-  "homepage": "https://github.com/b-koop/the-forge#readme",
+  "homepage": "https://github.com/nivoset/the-forge#readme",
   "pi": {
     "extensions": [
       "./dist/extensions/forge.js",
@@ -36,7 +36,7 @@
     "@earendil-works/pi-coding-agent": "*"
   },
   "dependencies": {
-    "smart-model-run": "0.2.0",
+    "smart-model-run": "0.2.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

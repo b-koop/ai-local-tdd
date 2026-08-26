@@ -67,6 +67,18 @@ extension entry declared in `package.json`:
 }
 ```
 
+### Publishing a release
+
+Maintainers publish releases from `nivoset/the-forge`: update the package version
+and dependencies, commit and push, create the matching `v<version>` tag, and
+publish the hosted release. The release workflow runs typechecking and tests,
+then publishes `@ai-local/tdd` to npm or safely skips an exact version that is
+already published.
+
+The release tag must match `package.json` (for example, `v0.2.1`). Trusted
+Publishing must reference repository `nivoset/the-forge`, workflow
+`release.yaml`, and permit `npm publish`. No npm token secret is required.
+
 ### 4. Run Forge in a target repository
 
 ```text

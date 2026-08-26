@@ -1,0 +1,41 @@
+{
+  "nextId": 4,
+  "tasks": [
+    {
+      "id": "1",
+      "subject": "Inspect repository metadata and release conventions",
+      "description": "Read relevant project instructions, package files, README, lockfile, and existing workflows before editing.",
+      "status": "completed",
+      "activeForm": "Inspecting repository release setup",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1787743138801,
+      "updatedAt": 1787743238102
+    },
+    {
+      "id": "2",
+      "subject": "Implement release publishing configuration",
+      "description": "Update package metadata and lockfile, add .github/workflows/release.yaml with release-tag validation, tests, idempotent npm publish, and document the procedure in README.md.",
+      "status": "completed",
+      "activeForm": "Implementing release publishing configuration",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1787743141371,
+      "updatedAt": 1787743240079
+    },
+    {
+      "id": "3",
+      "subject": "Verify installation, checks, and packaging",
+      "description": "Run frozen install, typecheck, tests, prepack, and inspect workflow requirements and repository links.",
+      "status": "completed",
+      "activeForm": "Verifying release configuration",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1787743143336,
+      "updatedAt": 1787743481268
+    }
+  ]
+}

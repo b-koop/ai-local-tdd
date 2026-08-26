@@ -12,12 +12,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nivoset/the-forge.git"
+    "url": "git+https://github.com/b-koop/ai-local-tdd.git"
   },
   "bugs": {
-    "url": "https://github.com/nivoset/the-forge/issues"
+    "url": "https://github.com/b-koop/ai-local-tdd/issues"
   },
-  "homepage": "https://github.com/nivoset/the-forge#readme",
+  "homepage": "https://github.com/b-koop/ai-local-tdd#readme",
   "pi": {
     "extensions": [
       "./dist/extensions/forge.js",
